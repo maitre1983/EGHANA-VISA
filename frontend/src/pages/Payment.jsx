@@ -62,7 +62,7 @@ export default function Payment() {
     };
 
     const cryptoActive = (code) => (config?.payment_methods || []).find((p) => p.code === code)?.active;
-    const cryptoAvailable = config?.nowpayments_configured;
+    const cryptoConfigured = config?.nowpayments_configured;
     const hubtelActive = cryptoActive("hubtel_visa");
     const discountPct = Number(config?.usdt_discount_pct || 0);
 
@@ -80,7 +80,7 @@ export default function Payment() {
 
             {/* If a crypto payment is active, show the deposit panel */}
             {crypto ? (
-                <CryptoDepositPanel crypto={crypto} onCancel={() => { clearInterval(pollRef.current); setCrypto(null); }} />
+                <CryptoDepositPanel crypto={crypto} tracking={tracking} onCancel={() => { clearInterval(pollRef.current); setCrypto(null); }} />
             ) : (
                 <div className="mt-8 space-y-4">
                     {/* Hubtel */}
@@ -106,8 +106,9 @@ export default function Payment() {
                         { code: "usdt_bep20", network: "bep20", label: "USDT (BEP20 · BSC)", desc: "Low fees, ~30 sec settlement" },
                     ].map((m) => {
                         const active = cryptoActive(m.code);
-                        const visible = active && cryptoAvailable;
-                        const comingSoon = !visible;
+                        const visible = active; // toggle governs visibility (simulation fills the gap when unconfigured)
+                        const isSimulation = active && !cryptoConfigured;
+                        const comingSoon = !active;
                         return (
                             <div key={m.code} className={`bg-white rounded-xl border ${visible ? "border-black/10" : "border-black/5 opacity-60"} p-6 relative`}>
                                 {visible && discountPct > 0 && (
@@ -122,6 +123,7 @@ export default function Payment() {
                                             <div className="font-heading font-semibold flex items-center gap-2">
                                                 {m.label}
                                                 {comingSoon && <span className="text-[10px] uppercase tracking-widest bg-ghana-gold/40 text-ghana-black px-2 py-0.5 rounded font-bold">Coming Soon</span>}
+                                                {isSimulation && <span className="text-[10px] uppercase tracking-widest bg-ghana-gold text-ghana-black px-2 py-0.5 rounded font-bold" data-testid={`${m.code}-simulation-badge`}>Sandbox</span>}
                                             </div>
                                             <div className="text-xs text-slate-500">
                                                 {m.desc}
@@ -160,13 +162,36 @@ export default function Payment() {
     );
 }
 
-function CryptoDepositPanel({ crypto, onCancel }) {
+function CryptoDepositPanel({ crypto, tracking, onCancel }) {
+    const nav = useNavigate();
+    const [simLoading, setSimLoading] = React.useState(false);
     const copy = (val) => { navigator.clipboard.writeText(String(val)); toast.success("Copied"); };
     const networkText = crypto.network === "trc20" ? "TRON (TRC20)" : "Binance Smart Chain (BEP20)";
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(crypto.pay_address || "")}`;
 
+    const simulateFinish = async (success) => {
+        setSimLoading(true);
+        try {
+            await api.post(`/payments/crypto/simulate-finish/${crypto.payment_id}`, { success });
+            if (success) {
+                toast.success("Simulated payment received");
+                nav(`/success/${tracking}`);
+            } else {
+                toast.error("Simulated failure applied");
+                onCancel();
+            }
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || "Simulation failed");
+        } finally { setSimLoading(false); }
+    };
+
     return (
         <div className="mt-8 bg-white rounded-xl border border-emerald-200 p-8 shadow-sm" data-testid="crypto-deposit">
+            {crypto.simulated && (
+                <div className="mb-6 bg-ghana-gold/20 border border-ghana-gold text-ghana-black rounded-md px-4 py-3 text-sm flex items-center gap-2" data-testid="crypto-sandbox-banner">
+                    <ShieldCheck size={16} /> USDT gateway in <strong>SANDBOX</strong> mode. This address is fake — no funds will move.
+                </div>
+            )}
             <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div>
                     <div className="text-xs uppercase tracking-widest text-emerald-700 font-semibold">Awaiting deposit</div>
@@ -190,10 +215,21 @@ function CryptoDepositPanel({ crypto, onCancel }) {
                 <strong className="text-ghana-red">⚠ Send only USDT on the {networkText} network.</strong> Any other coin or network will be permanently lost.
             </div>
 
-            <div className="mt-6 flex items-center gap-2 text-xs text-slate-500">
-                <Clock size={14} className="animate-pulse" />
-                We check the blockchain automatically every 15 seconds. This page will refresh once the payment is confirmed.
-            </div>
+            {crypto.simulated ? (
+                <div className="mt-6 grid grid-cols-2 gap-3">
+                    <button onClick={() => simulateFinish(false)} disabled={simLoading} data-testid="crypto-sim-fail"
+                        className="border border-black/10 rounded-md py-2.5 text-sm hover:bg-slate-50 disabled:opacity-50">Simulate failure</button>
+                    <button onClick={() => simulateFinish(true)} disabled={simLoading} data-testid="crypto-sim-success"
+                        className="bg-emerald-600 text-white rounded-md py-2.5 text-sm font-medium hover:bg-emerald-700 inline-flex items-center justify-center gap-2 disabled:opacity-50">
+                        {simLoading ? <Loader2 className="animate-spin" size={14} /> : <CheckCircle2 size={14} />} Simulate payment received
+                    </button>
+                </div>
+            ) : (
+                <div className="mt-6 flex items-center gap-2 text-xs text-slate-500">
+                    <Clock size={14} className="animate-pulse" />
+                    We check the blockchain automatically every 15 seconds. This page will refresh once the payment is confirmed.
+                </div>
+            )}
 
             <button onClick={onCancel} className="mt-4 text-xs text-slate-500 underline hover:text-ghana-black" data-testid="crypto-cancel">Cancel and choose another method</button>
         </div>

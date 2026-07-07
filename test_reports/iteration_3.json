@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 3 verification of USDT-simulation bug fix. Backend: 13/13 new pytest cases pass (1 intentionally skipped — non-simulated rejection requires real NowPayments keys). Frontend: full end-to-end UI flow verified with Playwright. Confirmed the reported bug is fixed: with USDT TRC20/BEP20 toggles ACTIVE and NowPayments keys UNCONFIGURED, /payment/:tracking now displays USDT rows as clickable options with a yellow 'SANDBOX' badge (no more 'Coming Soon'), the Pay-with-USDT button opens the CryptoDepositPanel with a sandbox banner + two buttons (Simulate failure / Simulate payment received), and clicking Simulate success completes the flow: application marked paid+submitted, tracking accessible, redirect to /success/{tracking}. Regression verified: when USDT toggles are inactive, both rows show 'Coming Soon', sandbox badges disappear, and buttons are disabled — exactly as before.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration3.py",
+    "/app/test_reports/pytest/iteration_3_results.xml"
+  ],
+  "action_items": [
+    "Update iteration-2 tests to reflect new simulation semantics (see 'stale tests' below). Two iteration-2 tests are now stale after the intentional fix and should be either removed or rewritten to match new behavior."
+  ],
+  "critical_code_review_comments": [
+    "server.py crypto_initiate: simulation branch is clean and idempotent; pay_amount is `price_amount * 1.00` (i.e., equal to USD price after discount) which matches the spec (USDT peg to USD).",
+    "crypto_simulate_finish correctly gates on `doc.get('simulated')` — non-simulated payments will 400. Not testable end-to-end without real NP keys, but code path is sound.",
+    "_apply_crypto_status_update reused for both IPN and simulation — good DRY. However when np_status == doc.get('payment_status'), IPN branch pushes a payload but $set still writes the same values — harmless but does one extra write. Minor.",
+    "crypto_status polling correctly skips external call when `simulated=true` (line 815 guard). Verified with 3 repeated calls — no errors.",
+    "Frontend Payment.jsx: `visible = active` (toggle alone governs). isSimulation shows Sandbox badge; comingSoon still shows when inactive. Clean condition logic.",
+    "CryptoDepositPanel receives `tracking` prop and uses `useNavigate()` internally — good. Simulate success/fail buttons have proper loading state and error handling via toast.",
+    "TWO ITERATION-2 TESTS NOW STALE (not product bugs): (a) TestCryptoInitiate.test_reject_when_not_configured expects 503 — the fix intentionally removed 503 in favor of simulation → this test should be deleted or rewritten to assert 200 + simulated:true. (b) TestNowPaymentsAdmin.test_test_endpoint_returns_400_when_unconfigured intermittently fails under parallel xdist workers because the settings singleton is shared mutable state — a race with test_save_and_test on the other worker. Recommend serializing NP-config tests or using @pytest.mark.serial."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration3.py"
+  ],
+  "success_rate": {"backend": "100% (13/13 new pass, 1 skipped by design); 55/57 iteration-1+2 pass — 2 stale expectations documented above",  "frontend": "100% (all 8 acceptance criteria pass on the Payment page + regression)"},
+  "test_credentials": "Admin: admin@eghanavisa.com / Admin@2026New! (unchanged).",
+  "seed_data_creation": "6 TEST_ applications created during backend suite + 2 during UI test (one paid via USDT simulation, one used for the deactivated-toggle regression check). db.crypto_payments has ~5 new sim records. State restored: usdt_trc20+usdt_bep20 toggles = INACTIVE, NP keys empty, usdt_discount_pct = 0.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 3 USDT-simulation fix complete and working end-to-end. Bug is fixed. Two stale iteration-2 tests (documented above) are the only follow-up — they aren't product regressions. Frontend Payment page now has these data-testids for future testing: usdt_trc20-simulation-badge, usdt_bep20-simulation-badge, crypto-sandbox-banner, crypto-sim-fail, crypto-sim-success, payment-usdt_trc20-btn, payment-usdt_bep20-btn, crypto-deposit, crypto-cancel. To reproduce the flow: (1) admin login, (2) POST /api/admin/settings/payment-toggle {code:'usdt_trc20', active:true}, (3) POST /api/applications, (4) GET /payment/{tracking} → sandbox badges visible, (5) click 'Pay with USDT', (6) click 'Simulate payment received' → /success. No real NowPayments account needed.",
+  "rca of the issue": "ROOT CAUSE: In the previous build /app/frontend/src/pages/Payment.jsx computed `visible = active && cryptoAvailable` where cryptoAvailable was `config.nowpayments_configured` — i.e., the USDT rows required BOTH the admin toggle AND real NowPayments API keys to be present. Meanwhile the backend crypto_initiate endpoint returned 503 'NowPayments not configured' when keys were absent, even if the toggle was on. So admin toggling USDT active without configuring NP keys produced no visible effect — the exact user complaint. FIX APPLIED BY E1: (a) Frontend now uses `visible = active` (toggle alone governs); when active-but-unconfigured it shows a yellow 'SANDBOX' badge instead of 'Coming Soon'. (b) Backend crypto_initiate no longer 503s when unconfigured — it enters a SIMULATION branch, generating NP-SIM-* payment_id, TSIMULATED* / 0xSIMULATED* fake addresses, and stores `simulated: true` on the crypto_payments record. (c) New endpoint POST /api/payments/crypto/simulate-finish/{payment_id} lets the UI complete the simulated flow (mirrors /api/payments/confirm for Hubtel). (d) crypto_status skips remote polling when `simulated=true`. VERIFICATION: All 13 iteration-3 pytest cases pass; Playwright UI flow verified end-to-end; discount applied correctly (10% on $350 → $315); regression (Coming Soon reappears when toggle inactive) confirmed."
+}

@@ -692,8 +692,6 @@ async def crypto_initiate(payload: CryptoInitIn):
 
     s = await get_settings()
     cfg = s.get("nowpayments", {})
-    if not nowp.is_configured(cfg):
-        raise HTTPException(status_code=503, detail="Crypto payments not available yet")
 
     # Verify method active in admin
     method_code = f"usdt_{payload.network}"
@@ -710,22 +708,37 @@ async def crypto_initiate(payload: CryptoInitIn):
     pay_currency = nowp.CURRENCY_MAP[payload.network]
     ipn_url = f"{os.environ.get('PUBLIC_BASE_URL', '').rstrip('/')}/api/webhooks/nowpayments"
 
-    # Apply USDT discount if configured
     discount_pct = float(s.get("usdt_discount_pct", 0.0) or 0.0)
     original_amount = float(app_doc["amount_usd"])
     price_amount = round(original_amount * (1 - discount_pct / 100.0), 2)
 
-    try:
-        result = nowp.create_payment(
-            cfg,
-            price_amount=price_amount,
-            pay_currency=pay_currency,
-            order_id=app_doc["tracking_no"],
-            ipn_callback_url=ipn_url,
-        )
-    except Exception as e:
-        logger.error(f"NowPayments create_payment failed: {e}")
-        raise HTTPException(status_code=502, detail=f"NowPayments error: {e}")
+    simulated = not nowp.is_configured(cfg)
+
+    if simulated:
+        # SIMULATION mode — no real API keys yet
+        payment_id = f"NP-SIM-{uuid.uuid4().hex[:12].upper()}"
+        # ~1:1 for USDT (peg to USD); slight variance to look realistic
+        pay_amount = round(price_amount * 1.00, 6)
+        pay_address = ("TSIMULATED" if payload.network == "trc20" else "0xSIMULATED") + uuid.uuid4().hex[:24].upper()
+        result = {
+            "payment_id": payment_id,
+            "pay_address": pay_address,
+            "pay_amount": pay_amount,
+            "payment_status": "waiting",
+            "expiration_estimate_date": None,
+        }
+    else:
+        try:
+            result = nowp.create_payment(
+                cfg,
+                price_amount=price_amount,
+                pay_currency=pay_currency,
+                order_id=app_doc["tracking_no"],
+                ipn_callback_url=ipn_url,
+            )
+        except Exception as e:
+            logger.error(f"NowPayments create_payment failed: {e}")
+            raise HTTPException(status_code=502, detail=f"NowPayments error: {e}")
 
     payment_id = str(result.get("payment_id"))
     doc = {
@@ -744,6 +757,7 @@ async def crypto_initiate(payload: CryptoInitIn):
         "expiration_estimate_date": result.get("expiration_estimate_date"),
         "provider": "nowpayments",
         "sandbox": cfg.get("sandbox", True),
+        "simulated": simulated,
         "created_at": now_iso(),
         "updated_at": now_iso(),
         "ipn_payloads": [],
@@ -762,7 +776,33 @@ async def crypto_initiate(payload: CryptoInitIn):
         "network": payload.network,
         "network_label": nowp.NETWORK_LABEL[payload.network],
         "expiration_estimate_date": doc["expiration_estimate_date"],
+        "simulated": simulated,
     }
+
+
+class SimulateFinishIn(BaseModel):
+    success: bool = True
+
+
+@api.post("/payments/crypto/simulate-finish/{payment_id}")
+async def crypto_simulate_finish(payment_id: str, payload: SimulateFinishIn):
+    """Simulate a NowPayments IPN 'finished' or 'failed' — sandbox helper only."""
+    doc = await db.crypto_payments.find_one({"payment_id": payment_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Unknown payment")
+    if not doc.get("simulated"):
+        raise HTTPException(status_code=400, detail="Only available for simulated payments")
+    np_status = "finished" if payload.success else "failed"
+    fake_payload = {
+        "payment_id": payment_id,
+        "order_id": doc["tracking_no"],
+        "payment_status": np_status,
+        "pay_amount": doc["pay_amount"],
+        "actually_paid": doc["pay_amount"] if payload.success else 0,
+        "pay_currency": doc["pay_currency"],
+    }
+    await _apply_crypto_status_update(payment_id, np_status, fake_payload, ipn=True)
+    return {"ok": True}
 
 
 @api.get("/payments/crypto/status/{payment_id}")
@@ -772,7 +812,7 @@ async def crypto_status(payment_id: str):
         raise HTTPException(status_code=404, detail="Unknown crypto payment")
 
     # Best-effort refresh from NowPayments if still pending (polling fallback)
-    if doc.get("payment_status") not in ("finished", "failed", "refunded", "expired"):
+    if doc.get("payment_status") not in ("finished", "failed", "refunded", "expired") and not doc.get("simulated"):
         s = await get_settings()
         cfg = s.get("nowpayments", {})
         if nowp.is_configured(cfg):
