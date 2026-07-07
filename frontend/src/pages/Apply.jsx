@@ -51,7 +51,16 @@ export default function Apply() {
         () => (config?.visa_types || []).find((v) => v.code === form.visa_code),
         [config, form.visa_code]
     );
-    const surcharge = form.processing === "express" ? (config?.express_surcharge_usd || 0) : 0;
+    const expressAvailable = selectedVisa?.express_available !== false;
+
+    // Force regular if selected visa doesn't support express
+    useEffect(() => {
+        if (!expressAvailable && form.processing === "express") {
+            setForm((f) => ({ ...f, processing: "regular" }));
+        }
+    }, [expressAvailable, form.processing]);
+
+    const surcharge = form.processing === "express" && expressAvailable ? (config?.express_surcharge_usd || 0) : 0;
     const total = (selectedVisa?.price_usd || 0) + surcharge;
 
     const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
@@ -106,20 +115,27 @@ export default function Apply() {
                                 </select>
                             </Field>
                             <Field label="Processing speed">
-                                <div className="grid grid-cols-2 gap-2">
+                                <div className={`grid ${expressAvailable ? "grid-cols-2" : "grid-cols-1"} gap-2`}>
                                     <button type="button" onClick={() => set("processing", "regular")}
                                         data-testid="apply-regular"
                                         className={`p-3 rounded-md border text-left text-sm transition-colors ${form.processing === "regular" ? "border-ghana-green bg-ghana-green/5" : "border-black/10 bg-white hover:bg-slate-50"}`}>
                                         <div className="font-semibold">Regular</div>
-                                        <div className="text-xs text-slate-500">5–7 business days · included</div>
+                                        <div className="text-xs text-slate-500">{selectedVisa?.processing_time_label || "5–7 business days"} · included</div>
                                     </button>
-                                    <button type="button" onClick={() => set("processing", "express")}
-                                        data-testid="apply-express"
-                                        className={`p-3 rounded-md border text-left text-sm transition-colors ${form.processing === "express" ? "border-ghana-gold bg-ghana-gold/10" : "border-black/10 bg-white hover:bg-slate-50"}`}>
-                                        <div className="font-semibold">Express</div>
-                                        <div className="text-xs text-slate-500">48–72 hours · +${config?.express_surcharge_usd || 0}</div>
-                                    </button>
+                                    {expressAvailable && (
+                                        <button type="button" onClick={() => set("processing", "express")}
+                                            data-testid="apply-express"
+                                            className={`p-3 rounded-md border text-left text-sm transition-colors ${form.processing === "express" ? "border-ghana-gold bg-ghana-gold/10" : "border-black/10 bg-white hover:bg-slate-50"}`}>
+                                            <div className="font-semibold">Express</div>
+                                            <div className="text-xs text-slate-500">48–72 hours · +${config?.express_surcharge_usd || 0}</div>
+                                        </button>
+                                    )}
                                 </div>
+                                {selectedVisa?.requires_presence && (
+                                    <div className="mt-2 text-xs text-ghana-red bg-ghana-red/5 border border-ghana-red/20 rounded px-2 py-1.5" data-testid="apply-presence-warning">
+                                        ⚠ Your physical presence in Ghana is required during the entire processing period.
+                                    </div>
+                                )}
                             </Field>
                         </div>
                     </Section>
@@ -239,7 +255,7 @@ export default function Apply() {
                             <h3 className="mt-2 font-heading text-xl font-semibold">{selectedVisa?.name_en || "Select a visa"}</h3>
                             <div className="mt-4 space-y-2 text-sm">
                                 <Row label="Base price" value={`$${selectedVisa?.price_usd || 0}`} />
-                                <Row label="Processing" value={form.processing === "express" ? "Express 48–72h" : "Regular 5–7d"} />
+                                <Row label="Processing" value={form.processing === "express" ? "Express 48–72h" : `Regular · ${selectedVisa?.processing_time_label || "5–7d"}`} />
                                 <Row label="Surcharge" value={`+$${surcharge}`} />
                                 <div className="border-t border-black/5 my-3" />
                                 <Row label="Total" value={`$${total}`} bold />

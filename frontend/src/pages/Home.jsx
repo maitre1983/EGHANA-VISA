@@ -140,8 +140,13 @@ export default function Home() {
                                 </div>
                                 <ul className="mt-6 space-y-2 text-sm text-slate-700">
                                     <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-ghana-green" /> {v.days} days validity</li>
-                                    <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-ghana-green" /> Regular processing 5–7 days</li>
-                                    <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-ghana-green" /> Express +${config?.express_surcharge_usd} · 48–72h</li>
+                                    <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-ghana-green" /> Regular · {v.processing_time_label || "5–7 business days"}</li>
+                                    {v.express_available !== false && (
+                                        <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-ghana-green" /> Express +${config?.express_surcharge_usd} · 48–72h</li>
+                                    )}
+                                    {v.requires_presence && (
+                                        <li className="flex items-center gap-2 text-ghana-red"><CheckCircle2 size={14} className="text-ghana-red" /> Presence in Ghana required</li>
+                                    )}
                                 </ul>
                                 {v.active ? (
                                     <Link to="/apply" className="mt-6 inline-flex items-center gap-2 bg-ghana-black text-white px-5 py-2.5 rounded-md text-sm font-medium hover:bg-ghana-black/90 transition-colors" data-testid={`home-select-${v.code}`}>

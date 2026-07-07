@@ -7,9 +7,9 @@ def _now():
 
 
 DEFAULT_VISA_TYPES = [
-    {"code": "tourist_30", "name_en": "30 Days Tourist Visa", "name_fr": "Visa touristique 30 jours", "days": 30, "price_usd": 350.0, "active": True, "always_active": True},
-    {"code": "extended_60", "name_en": "60 Days Extended Visa", "name_fr": "Visa étendu 60 jours", "days": 60, "price_usd": 500.0, "active": False, "always_active": False},
-    {"code": "residence_1y", "name_en": "1 Year Residence Permit", "name_fr": "Permis de résidence 1 an", "days": 365, "price_usd": 1200.0, "active": False, "always_active": False},
+    {"code": "tourist_30", "name_en": "30 Days Tourist Visa", "name_fr": "Visa touristique 30 jours", "days": 30, "price_usd": 350.0, "active": True, "always_active": True, "express_available": True, "processing_time_label": "5–7 business days", "requires_presence": False},
+    {"code": "extended_60", "name_en": "60 Days Extended Visa", "name_fr": "Visa étendu 60 jours", "days": 60, "price_usd": 500.0, "active": False, "always_active": False, "express_available": True, "processing_time_label": "5–7 business days", "requires_presence": False},
+    {"code": "residence_1y", "name_en": "1 Year Residence Permit", "name_fr": "Permis de résidence 1 an", "days": 365, "price_usd": 1200.0, "active": False, "always_active": False, "express_available": False, "processing_time_label": "45–60 days · in-country presence required", "requires_presence": True},
 ]
 
 DEFAULT_PAYMENT_METHODS = [
@@ -17,6 +17,14 @@ DEFAULT_PAYMENT_METHODS = [
     {"code": "usdt_trc20", "name": "USDT (TRC20)", "active": False, "always_active": False},
     {"code": "usdt_bep20", "name": "USDT (BEP20)", "active": False, "always_active": False},
 ]
+
+DEFAULT_NOWPAYMENTS = {
+    "sandbox": True,
+    "api_key": "",
+    "ipn_secret": "",
+    "sandbox_api_key": "",
+    "sandbox_ipn_secret": "",
+}
 
 DEFAULT_SETTINGS = {
     "id": "singleton",
@@ -33,6 +41,7 @@ DEFAULT_SETTINGS = {
         "return_url": "",
         "outbound_proxy_url": "",
     },
+    "nowpayments": DEFAULT_NOWPAYMENTS,
     "visa_types": DEFAULT_VISA_TYPES,
     "payment_methods": DEFAULT_PAYMENT_METHODS,
     "updated_at": _now(),

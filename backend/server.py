@@ -1,11 +1,12 @@
 """e.GHANA Visa Portal — FastAPI backend."""
-from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Form, Depends, Response, Query
+from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Form, Depends, Response, Query, Request
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 import uuid
+import json
 import random
 from pathlib import Path
 from pydantic import BaseModel, EmailStr, Field
@@ -18,6 +19,7 @@ from storage_service import storage, validate_file, MIME_MAP
 from email_service import EmailService
 from hubtel_service import initiate_checkout, is_sandbox
 from ama_chat import ask_ama
+import nowpayments_service as nowp
 from seed_data import DEFAULT_SETTINGS, DEFAULT_EMAIL_TEMPLATES
 
 ROOT_DIR = Path(__file__).parent
@@ -62,6 +64,25 @@ async def startup():
     if not existing_settings:
         await db.settings.insert_one(dict(DEFAULT_SETTINGS))
         logger.info("Seeded default settings")
+    else:
+        # Additive migration: patch missing fields without overwriting user values
+        updates = {}
+        if "nowpayments" not in existing_settings:
+            updates["nowpayments"] = DEFAULT_SETTINGS["nowpayments"]
+        vt_list = existing_settings.get("visa_types", [])
+        changed = False
+        for vt in vt_list:
+            for default_vt in DEFAULT_SETTINGS["visa_types"]:
+                if vt.get("code") == default_vt["code"]:
+                    for f in ("express_available", "processing_time_label", "requires_presence"):
+                        if f not in vt:
+                            vt[f] = default_vt[f]
+                            changed = True
+        if changed:
+            updates["visa_types"] = vt_list
+        if updates:
+            await db.settings.update_one({"id": "singleton"}, {"$set": updates})
+            logger.info(f"Patched settings with: {list(updates.keys())}")
 
     # Seed email templates
     if await db.email_templates.count_documents({}) == 0:
@@ -97,6 +118,7 @@ async def root():
 async def public_config():
     """Config exposed to the public site (safe fields only)."""
     s = await get_settings()
+    np_cfg = s.get("nowpayments", {})
     return {
         "visa_types": s.get("visa_types", []),
         "payment_methods": s.get("payment_methods", []),
@@ -104,6 +126,8 @@ async def public_config():
         "max_upload_mb": s.get("max_upload_mb", 8),
         "whatsapp_admin": s.get("whatsapp_admin", ""),
         "hubtel_sandbox": is_sandbox(s.get("hubtel", {})),
+        "nowpayments_configured": nowp.is_configured(np_cfg),
+        "nowpayments_sandbox": bool(np_cfg.get("sandbox", True)),
     }
 
 
@@ -143,6 +167,8 @@ async def create_application(payload: ApplicationIn):
     processing = payload.processing.lower()
     if processing not in ("regular", "express"):
         raise HTTPException(status_code=400, detail="Invalid processing type")
+    if processing == "express" and not visa.get("express_available", True):
+        raise HTTPException(status_code=400, detail="Express processing is not available for this visa type")
 
     surcharge = float(settings.get("express_surcharge_usd", 50.0)) if processing == "express" else 0.0
     total = price + surcharge
@@ -595,6 +621,240 @@ async def admin_save_template(payload: EmailTemplateIn, ctx: dict = Depends(requ
 @api.get("/admin/email-log")
 async def admin_email_log(ctx: dict = Depends(require_admin)):
     return await db.email_log.find({}, {"_id": 0}).sort("created_at", -1).limit(100).to_list(100)
+
+
+# ────────────────── NOWPAYMENTS (USDT) ──────────────────
+class NowPaymentsConfigIn(BaseModel):
+    sandbox: bool = True
+    api_key: str = ""
+    ipn_secret: str = ""
+    sandbox_api_key: str = ""
+    sandbox_ipn_secret: str = ""
+
+
+@api.post("/admin/settings/nowpayments")
+async def admin_update_nowpayments(payload: NowPaymentsConfigIn, ctx: dict = Depends(require_admin)):
+    await db.settings.update_one(
+        {"id": "singleton"},
+        {"$set": {"nowpayments": payload.model_dump(), "updated_at": now_iso()}},
+    )
+    return {"ok": True}
+
+
+@api.post("/admin/settings/nowpayments/test")
+async def admin_test_nowpayments(ctx: dict = Depends(require_admin)):
+    s = await get_settings()
+    cfg = s.get("nowpayments", {})
+    if not nowp.is_configured(cfg):
+        raise HTTPException(status_code=400, detail="NowPayments not configured (missing API key or IPN secret)")
+    try:
+        status_info = nowp.get_status(cfg)
+        currencies = nowp.get_currencies(cfg)
+        has_trc20 = "usdttrc20" in currencies
+        has_bep20 = "usdtbsc" in currencies
+        return {
+            "ok": True,
+            "status": status_info,
+            "usdttrc20_supported": has_trc20,
+            "usdtbsc_supported": has_bep20,
+            "mode": "sandbox" if cfg.get("sandbox", True) else "production",
+        }
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"NowPayments error: {e}")
+
+
+class CryptoInitIn(BaseModel):
+    tracking_no: str
+    network: str  # 'trc20' | 'bep20'
+
+
+@api.post("/payments/crypto/initiate")
+async def crypto_initiate(payload: CryptoInitIn):
+    if payload.network not in nowp.CURRENCY_MAP:
+        raise HTTPException(status_code=400, detail="Invalid network")
+
+    s = await get_settings()
+    cfg = s.get("nowpayments", {})
+    if not nowp.is_configured(cfg):
+        raise HTTPException(status_code=503, detail="Crypto payments not available yet")
+
+    # Verify method active in admin
+    method_code = f"usdt_{payload.network}"
+    method = next((m for m in s.get("payment_methods", []) if m["code"] == method_code), None)
+    if not method or not method.get("active"):
+        raise HTTPException(status_code=403, detail="This payment method is disabled")
+
+    app_doc = await db.applications.find_one({"tracking_no": payload.tracking_no}, {"_id": 0})
+    if not app_doc:
+        raise HTTPException(status_code=404, detail="Application not found")
+    if app_doc.get("payment_status") == "paid":
+        raise HTTPException(status_code=400, detail="Application already paid")
+
+    pay_currency = nowp.CURRENCY_MAP[payload.network]
+    ipn_url = f"{os.environ.get('PUBLIC_BASE_URL', '').rstrip('/')}/api/webhooks/nowpayments"
+
+    try:
+        result = nowp.create_payment(
+            cfg,
+            price_amount=float(app_doc["amount_usd"]),
+            pay_currency=pay_currency,
+            order_id=app_doc["tracking_no"],
+            ipn_callback_url=ipn_url,
+        )
+    except Exception as e:
+        logger.error(f"NowPayments create_payment failed: {e}")
+        raise HTTPException(status_code=502, detail=f"NowPayments error: {e}")
+
+    payment_id = str(result.get("payment_id"))
+    doc = {
+        "id": str(uuid.uuid4()),
+        "payment_id": payment_id,
+        "tracking_no": app_doc["tracking_no"],
+        "network": payload.network,
+        "pay_currency": pay_currency,
+        "pay_address": result.get("pay_address"),
+        "pay_amount": result.get("pay_amount"),
+        "price_amount_usd": app_doc["amount_usd"],
+        "payment_status": result.get("payment_status", "waiting"),
+        "actually_paid": None,
+        "expiration_estimate_date": result.get("expiration_estimate_date"),
+        "provider": "nowpayments",
+        "sandbox": cfg.get("sandbox", True),
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+        "ipn_payloads": [],
+    }
+    await db.crypto_payments.insert_one(dict(doc))
+    await db.applications.update_one(
+        {"tracking_no": app_doc["tracking_no"]},
+        {"$set": {"payment_transaction_id": payment_id, "updated_at": now_iso()}},
+    )
+    doc.pop("_id", None)
+    return {
+        "payment_id": payment_id,
+        "pay_address": doc["pay_address"],
+        "pay_amount": doc["pay_amount"],
+        "pay_currency": pay_currency,
+        "network": payload.network,
+        "network_label": nowp.NETWORK_LABEL[payload.network],
+        "expiration_estimate_date": doc["expiration_estimate_date"],
+    }
+
+
+@api.get("/payments/crypto/status/{payment_id}")
+async def crypto_status(payment_id: str):
+    doc = await db.crypto_payments.find_one({"payment_id": payment_id}, {"_id": 0, "ipn_payloads": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Unknown crypto payment")
+
+    # Best-effort refresh from NowPayments if still pending (polling fallback)
+    if doc.get("payment_status") not in ("finished", "failed", "refunded", "expired"):
+        s = await get_settings()
+        cfg = s.get("nowpayments", {})
+        if nowp.is_configured(cfg):
+            try:
+                remote = nowp.get_payment(cfg, payment_id)
+                np_status = remote.get("payment_status", doc["payment_status"])
+                if np_status != doc["payment_status"]:
+                    await _apply_crypto_status_update(payment_id, np_status, remote, ipn=False)
+                    doc["payment_status"] = np_status
+                    doc["actually_paid"] = remote.get("actually_paid")
+            except Exception as e:
+                logger.warning(f"NowPayments polling failed: {e}")
+
+    return {
+        "payment_id": doc["payment_id"],
+        "tracking_no": doc["tracking_no"],
+        "payment_status": doc["payment_status"],
+        "internal_status": nowp.map_status(doc["payment_status"]),
+        "pay_address": doc["pay_address"],
+        "pay_amount": doc["pay_amount"],
+        "pay_currency": doc["pay_currency"],
+        "actually_paid": doc.get("actually_paid"),
+        "network": doc["network"],
+    }
+
+
+async def _apply_crypto_status_update(payment_id: str, np_status: str, payload: dict, ipn: bool):
+    """Idempotently update crypto_payments + trigger visa confirmation on 'finished'."""
+    doc = await db.crypto_payments.find_one({"payment_id": payment_id}, {"_id": 0})
+    if not doc:
+        return
+    if doc.get("payment_status") == np_status and not ipn:
+        return
+    update = {
+        "payment_status": np_status,
+        "actually_paid": payload.get("actually_paid"),
+        "updated_at": now_iso(),
+    }
+    push_ipn = {"$push": {"ipn_payloads": {"received_at": now_iso(), "payload": payload}}} if ipn else {}
+    await db.crypto_payments.update_one(
+        {"payment_id": payment_id},
+        {"$set": update, **push_ipn},
+    )
+
+    # On finished: mark application paid (idempotent) and send confirmation email
+    if np_status == "finished":
+        app_doc = await db.applications.find_one({"tracking_no": doc["tracking_no"]}, {"_id": 0})
+        if app_doc and app_doc.get("payment_status") != "paid":
+            await db.applications.update_one(
+                {"tracking_no": app_doc["tracking_no"]},
+                {"$set": {
+                    "payment_status": "paid",
+                    "status": "submitted",
+                    "paid_at": now_iso(),
+                    "payment_method": f"usdt_{doc['network']}",
+                    "updated_at": now_iso(),
+                }},
+            )
+            processing_label = "Express (48–72h)" if app_doc["processing"] == "express" else "Regular"
+            await email_svc.send(
+                recipient=app_doc["email"],
+                template_name="submitted",
+                lang=app_doc.get("lang", "en"),
+                context={
+                    "name": app_doc["full_name"],
+                    "tracking": app_doc["tracking_no"],
+                    "visa_type": app_doc["visa_name"],
+                    "processing": processing_label,
+                    "amount": f"{app_doc['amount_usd']:.2f}",
+                },
+            )
+
+
+@app.post("/api/webhooks/nowpayments")
+async def nowpayments_ipn(request: Request):
+    raw = await request.body()
+    sig = request.headers.get("x-nowpayments-sig", "")
+    s = await get_settings()
+    cfg = s.get("nowpayments", {})
+    secret = nowp._ipn_secret(cfg)
+    if not nowp.verify_ipn_signature(raw, sig, secret):
+        logger.warning("Rejected NowPayments IPN (invalid signature)")
+        await db.crypto_ipn_rejections.insert_one({
+            "id": str(uuid.uuid4()),
+            "created_at": now_iso(),
+            "sig": sig,
+            "raw": raw.decode("utf-8", errors="replace")[:2000],
+        })
+        raise HTTPException(status_code=401, detail="Invalid signature")
+
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+
+    payment_id = str(data.get("payment_id", ""))
+    np_status = data.get("payment_status", "waiting")
+    if not payment_id:
+        return {"ok": True}
+    await _apply_crypto_status_update(payment_id, np_status, data, ipn=True)
+    return {"ok": True}
+
+
+@api.get("/admin/crypto-payments")
+async def admin_crypto_payments(ctx: dict = Depends(require_admin)):
+    return await db.crypto_payments.find({}, {"_id": 0}).sort("created_at", -1).limit(500).to_list(500)
 
 
 # ────────────────── AMA CHAT ──────────────────

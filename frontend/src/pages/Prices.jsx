@@ -25,8 +25,13 @@ export default function Prices() {
                         </div>
                         <ul className="mt-6 space-y-2 text-sm text-slate-700">
                             <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-ghana-green" /> {v.days} days validity</li>
-                            <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-ghana-green" /> Regular · 5–7 business days</li>
-                            <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-ghana-gold-dark" /> Express +${config?.express_surcharge_usd} · 48–72h</li>
+                            <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-ghana-green" /> Regular · {v.processing_time_label || "5–7 business days"}</li>
+                            {v.express_available !== false && (
+                                <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-ghana-gold-dark" /> Express +${config?.express_surcharge_usd} · 48–72h</li>
+                            )}
+                            {v.requires_presence && (
+                                <li className="flex items-center gap-2 text-ghana-red"><CheckCircle2 size={14} className="text-ghana-red" /> Presence in Ghana required</li>
+                            )}
                             <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-ghana-green" /> Delivered by email</li>
                         </ul>
                         {v.active ? (

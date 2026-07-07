@@ -12,7 +12,7 @@ const AI_MODELS = [
     "gemini-3-flash-preview",
 ];
 
-const SEC = { prices: "Visa Prices", types: "Visa Types", methods: "Payment Methods", hubtel: "Hubtel API", other: "WhatsApp & AI" };
+const SEC = { prices: "Visa Prices", types: "Visa Types", methods: "Payment Methods", hubtel: "Hubtel API", nowpayments: "NowPayments (USDT)", other: "WhatsApp & AI" };
 
 export default function AdminSettings() {
     const [tab, setTab] = useState("prices");
@@ -42,6 +42,17 @@ export default function AdminSettings() {
     };
     const saveHubtel = async (payload) => {
         await api.post("/admin/settings/hubtel", payload); toast.success("Hubtel saved"); reload();
+    };
+    const saveNowpayments = async (payload) => {
+        await api.post("/admin/settings/nowpayments", payload); toast.success("NowPayments saved"); reload();
+    };
+    const testNowpayments = async () => {
+        try {
+            const { data } = await api.post("/admin/settings/nowpayments/test");
+            toast.success(`Connection OK · ${data.mode} · TRC20:${data.usdttrc20_supported ? "✓" : "✗"} · BEP20:${data.usdtbsc_supported ? "✓" : "✗"}`);
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || "Test failed");
+        }
     };
     const saveWhatsapp = async (v) => { await api.post("/admin/settings/whatsapp", { whatsapp_admin: v }); toast.success("Saved"); reload(); };
     const saveAI = async (v) => { await api.post("/admin/settings/ai-model", { ai_model: v }); toast.success("Saved"); reload(); };
@@ -89,6 +100,7 @@ export default function AdminSettings() {
                     </Card>
                 ))}
                 {tab === "hubtel" && <HubtelForm initial={s.hubtel} onSave={saveHubtel} />}
+                {tab === "nowpayments" && <NowPaymentsForm initial={s.nowpayments || {}} onSave={saveNowpayments} onTest={testNowpayments} />}
                 {tab === "other" && (
                     <>
                         <Card title="WhatsApp support number (used by Ama)">
@@ -158,8 +170,7 @@ const ToggleRow = ({ active, disabled, onChange, testid }) => (
     </label>
 );
 
-const HubtelForm = ({ initial, onSave }) => {
-    const [f, setF] = useState(initial);
+const HubtelForm = ({ initial, onSave }) => {    const [f, setF] = useState(initial);
     const set = (k, v) => setF((old) => ({ ...old, [k]: v }));
     return (
         <div className="bg-white rounded-xl border border-black/10 p-6 space-y-4">
@@ -186,3 +197,72 @@ const HubtelForm = ({ initial, onSave }) => {
         </div>
     );
 };
+
+const NowPaymentsForm = ({ initial, onSave, onTest }) => {
+    const [f, setF] = useState({
+        sandbox: initial.sandbox ?? true,
+        api_key: initial.api_key || "",
+        ipn_secret: initial.ipn_secret || "",
+        sandbox_api_key: initial.sandbox_api_key || "",
+        sandbox_ipn_secret: initial.sandbox_ipn_secret || "",
+    });
+    const set = (k, v) => setF((old) => ({ ...old, [k]: v }));
+    const callbackUrl = `${(process.env.REACT_APP_BACKEND_URL || "").replace(/\/$/, "")}/api/webhooks/nowpayments`;
+    const configured = f.sandbox
+        ? (f.sandbox_api_key && f.sandbox_ipn_secret)
+        : (f.api_key && f.ipn_secret);
+
+    return (
+        <div className="bg-white rounded-xl border border-black/10 p-6 space-y-4">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div>
+                    <div className="font-heading font-semibold">NowPayments Configuration (USDT TRC20/BEP20)</div>
+                    <div className="text-xs text-slate-500 mt-0.5">Get keys at nowpayments.io → Store Settings.</div>
+                </div>
+                {!configured && (
+                    <span className="text-[10px] uppercase tracking-widest bg-ghana-red/10 text-ghana-red px-2 py-1 rounded font-bold" data-testid="np-required-badge">Configuration required</span>
+                )}
+            </div>
+
+            <ToggleRow active={f.sandbox} onChange={(v) => set("sandbox", v)} testid="np-sandbox" />
+            <div className="text-xs text-slate-500 -mt-2">Sandbox uses <span className="font-mono">api-sandbox.nowpayments.io</span>. Production uses <span className="font-mono">api.nowpayments.io</span>.</div>
+
+            <div className="border-t border-black/5 pt-4">
+                <div className="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-2">IPN Callback URL (copy into your NowPayments dashboard)</div>
+                <div className="flex gap-2">
+                    <input readOnly value={callbackUrl} data-testid="np-callback-url"
+                        className="flex-1 bg-slate-50 border border-black/10 rounded-md px-3 py-2 text-xs font-mono text-slate-700" />
+                    <button type="button" onClick={() => { navigator.clipboard.writeText(callbackUrl); toast.success("Copied"); }}
+                        className="border border-black/10 px-3 py-2 rounded-md text-xs hover:bg-slate-50">Copy</button>
+                </div>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-4 pt-4 border-t border-black/5">
+                <div>
+                    <div className="text-xs uppercase tracking-widest text-emerald-700 font-semibold mb-2">Sandbox credentials</div>
+                    <label className="text-xs uppercase tracking-wider text-slate-600 font-medium">Sandbox API Key</label>
+                    <input value={f.sandbox_api_key} onChange={(e) => set("sandbox_api_key", e.target.value)} data-testid="np-sandbox-key"
+                        className="mt-1.5 w-full border border-black/10 rounded-md px-3 py-2.5 text-sm focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none" />
+                    <label className="text-xs uppercase tracking-wider text-slate-600 font-medium mt-3 block">Sandbox IPN Secret</label>
+                    <input value={f.sandbox_ipn_secret} onChange={(e) => set("sandbox_ipn_secret", e.target.value)} data-testid="np-sandbox-ipn"
+                        className="mt-1.5 w-full border border-black/10 rounded-md px-3 py-2.5 text-sm focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none" />
+                </div>
+                <div>
+                    <div className="text-xs uppercase tracking-widest text-ghana-red font-semibold mb-2">Production credentials</div>
+                    <label className="text-xs uppercase tracking-wider text-slate-600 font-medium">Production API Key</label>
+                    <input value={f.api_key} onChange={(e) => set("api_key", e.target.value)} data-testid="np-prod-key"
+                        className="mt-1.5 w-full border border-black/10 rounded-md px-3 py-2.5 text-sm focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none" />
+                    <label className="text-xs uppercase tracking-wider text-slate-600 font-medium mt-3 block">Production IPN Secret</label>
+                    <input value={f.ipn_secret} onChange={(e) => set("ipn_secret", e.target.value)} data-testid="np-prod-ipn"
+                        className="mt-1.5 w-full border border-black/10 rounded-md px-3 py-2.5 text-sm focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none" />
+                </div>
+            </div>
+
+            <div className="pt-4 border-t border-black/5 flex gap-2 flex-wrap">
+                <button onClick={() => onSave(f)} data-testid="np-save" className="bg-ghana-green text-white px-5 py-2.5 rounded-md text-sm font-medium inline-flex items-center gap-2 hover:bg-ghana-green-dark"><Save size={14} /> Save NowPayments</button>
+                <button onClick={onTest} data-testid="np-test" className="border border-black/10 px-5 py-2.5 rounded-md text-sm font-medium inline-flex items-center gap-2 hover:bg-slate-50">Test connection</button>
+            </div>
+        </div>
+    );
+};
+

@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 2 end-to-end verification of e.GHANA Visa Portal — residence_1y express rejection + full NowPayments (USDT) admin + IPN webhook + frontend conditional rendering. 21/21 new backend pytest cases pass (100%) covering: /api/config new fields (express_available, processing_time_label, requires_presence, nowpayments_configured, nowpayments_sandbox); residence_1y activation → express rejected 400 → regular accepted with $0 surcharge → deactivated; NowPayments admin config save (auth required) → GET persists → test endpoint 400 when unconfigured / 502 upstream with fake keys (no crash); crypto initiate: 503 not-configured, 403 method-disabled, 404 unknown tracking, 400 invalid network; IPN webhook: 401 no header, 401 invalid HMAC-SHA512, 200 with valid signature computed from sorted-keys canonical JSON; crypto status 404; admin crypto listing auth-guarded; FULL Hubtel regression (application create → 4 doc uploads → payment initiate sandbox → confirm → status=submitted). Iteration-1 tests re-run: 38/38 pass. Frontend verified end-to-end: /prices shows residence_1y with '45–60 days · in-country presence required' + red 'Presence in Ghana required' warning + NO Express line. /apply hides Express button for residence_1y, shows red presence warning, live summary total omits express surcharge (Surcharge = +$0). /admin/settings has new NowPayments (USDT) tab with all data-testids (np-sandbox, np-callback-url read-only pointing to https://<backend>/api/webhooks/nowpayments, np-sandbox-key, np-sandbox-ipn, np-prod-key, np-prod-ipn, np-save, np-test). /payment/:tracking shows Hubtel + USDT TRC20 (Coming Soon) + USDT BEP20 (Coming Soon); Hubtel sandbox modal opens with simulate success/fail. /admin/analytics shows 'Payment method split' with Hubtel (5) vs USDT Crypto (0). Cleanup: residence_1y deactivated, NP keys cleared, USDT methods toggled off — DB restored to seeded state.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration2.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/iteration_2_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py has grown from 640 to 900 lines with the iteration-2 additions (nowpayments admin, crypto initiate, crypto status, webhook, admin crypto listing). Still readable, but the crypto/webhook block (lines 626-857) is a good candidate to extract into a routes/crypto.py module along with hubtel routes for symmetry.",
+    "nowpayments IPN webhook is defined on `app` directly at `/api/webhooks/nowpayments` (bypasses the APIRouter). This works but is inconsistent with every other route — consider mounting it via `api` router as `POST /webhooks/nowpayments` for uniform middleware/observability. Not functional bug.",
+    "_apply_crypto_status_update is idempotent for finished→paid transition (guards with `if app_doc.get('payment_status') != 'paid'`) — good. However it does NOT push the IPN payload if np_status == current status and ipn=True; that would be useful for audit/history. Minor observability gap.",
+    "crypto_initiate uses `os.environ.get('PUBLIC_BASE_URL', '')` — if unset, the ipn_callback_url becomes '/api/webhooks/nowpayments' (relative). NowPayments requires an absolute URL — this would silently fail on prod deploys. Suggest raising 500 at initiate time when PUBLIC_BASE_URL is unset. Present env value is correct.",
+    "The public /api/config exposes `nowpayments_configured` correctly, so the frontend can hide USDT buttons when unconfigured — good separation of concerns. The Payment page also cross-checks the method toggle (payment_methods active flag) which is defensive.",
+    "verify_ipn_signature uses hmac.compare_digest — timing-safe compare, good. Uses ensure_ascii=False for canonical form; matches Python-side signing; would fail if NowPayments encodes non-ASCII differently, but NP payloads are all ASCII in practice.",
+    "Sandbox express surcharge state drifted from 50 to 75 between iterations (a prior tester modified it without restoring). Not a code bug but recommend making iteration-1 test either accept any positive value OR restore surcharge in a fixture teardown. Reset here manually."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration2.py"
+  ],
+  "success_rate": {"backend": "100% (21/21 new + 38/38 regression)", "frontend": "100% for iteration-2 features"},
+  "test_credentials": "Admin: admin@eghanavisa.com / Admin@2026New! (unchanged from iteration 1).",
+  "seed_data_creation": "Test data created during backend suite: 3 TEST_ applications for residence flow + 1 for IPN flow + 1 for Hubtel regression. No crypto_payments were inserted (all initiate attempts intentionally rejected). db.crypto_ipn_rejections received 1 record from the invalid-signature test.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iteration 2 complete. All new features working: (1) residence_1y properly rejects express with 400, (2) NowPayments admin save/test endpoints work — test returns 502 when fake keys hit the sandbox (upstream error, expected); no server crash, (3) IPN HMAC-SHA512 verification works with sorted-keys canonical JSON + lowercase hex, (4) frontend conditional rendering works on /prices and /apply, (5) Payment page shows USDT with Coming Soon badges when unconfigured, (6) Analytics shows payment split. State restored: residence_1y inactive, NP keys empty, USDT methods inactive, express_surcharge=$50. If iteration-1 backend_test.py fails on TestConfig.test_public_config with 'assert 75.0 == 50.0', run the reset shown in the RCA section below.",
+  "rca of the issue": "No product bugs found. Only observation: iteration-1 test suite's TestConfig.test_public_config hard-codes express_surcharge_usd == 50.0, but the admin settings singleton is a shared mutable resource — any prior tester that runs TestAdminSettings.test_express_surcharge with a non-default value (or leaves state altered) will break iteration-1's test on the next run. Mitigation applied: reset express_surcharge to 50.0 via POST /api/admin/settings/express-surcharge before re-running backend_test.py. Long-term fix: iteration-1 tests should either use a startup-fixture that resets settings-singleton to defaults, or assert `> 0` instead of `== 50.0`. Not required for shipping — the product code is fine."
+}
