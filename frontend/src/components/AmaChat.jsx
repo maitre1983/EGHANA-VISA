@@ -38,7 +38,7 @@ export default function AmaChat() {
             <button
                 data-testid="ama-open"
                 onClick={() => setOpen((o) => !o)}
-                className="fixed bottom-6 right-6 w-14 h-14 rounded-full shadow-xl z-50 flex items-center justify-center transition-transform hover:scale-105"
+                className="fixed bottom-24 right-6 md:bottom-6 md:right-24 w-14 h-14 rounded-full shadow-xl z-50 flex items-center justify-center transition-transform hover:scale-105"
                 style={{ background: "#0A0A0A", color: "#FCD116" }}
                 aria-label="Open Ama chat"
             >
@@ -48,7 +48,7 @@ export default function AmaChat() {
             {open && (
                 <div
                     data-testid="ama-window"
-                    className="fixed bottom-24 right-6 w-[350px] max-w-[92vw] h-[480px] bg-white rounded-xl shadow-2xl overflow-hidden z-50 flex flex-col border border-black/10"
+                    className="fixed bottom-40 right-6 md:bottom-24 md:right-24 w-[350px] max-w-[92vw] h-[480px] bg-white rounded-xl shadow-2xl overflow-hidden z-50 flex flex-col border border-black/10"
                 >
                     <div className="bg-ghana-black text-white px-4 py-3 flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full ghana-stripe flex items-center justify-center text-ghana-black font-heading font-extrabold text-sm">A</div>
