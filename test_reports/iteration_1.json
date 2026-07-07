@@ -1,0 +1,44 @@
+{
+  "summary": "First iteration end-to-end test of e.GHANA Visa Portal. 38/38 backend pytest cases pass (100%) when executed serially. Full frontend E2E: Home → Apply (form + 4 uploads + summary + visa sample) → Payment sandbox banner + modal → Success → Track → FAQ (8 items) → Admin login → Dashboard KPIs + status transitions (in_progress → done) → Ama chat with Claude Sonnet 4.5 all functional. One environmental UX issue: the Emergent preview badge overlaps the Ama floating chat button (bottom-right) intercepting pointer events.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/payments/initiate", "issue": "Race in parallel tests: when TestAdminSettings.test_hubtel_config_update sets sandbox=false with test-only creds mid-flight, a concurrent test_payment_initiate_sandbox hits real Hubtel API and returns 500. Tests pass 100% under -n 0 serial execution. Not a product bug — a shared-settings test isolation issue. RECOMMEND: server-side, either (a) reject saving hubtel with sandbox=false unless credentials verify, or (b) wrap hubtel initiate_checkout with a try/except that falls back to a 400 instead of 500 when upstream fails."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AmaChat", "issue": "Floating chat button (data-testid=ama-open) sits at fixed bottom-6/right-6 (z-50). The Emergent preview badge (a#emergent-badge) is rendered at the exact same corner and intercepts pointer events, blocking real user clicks on Ama. Programmatic clicks work; the underlying chat flow with Claude Sonnet 4.5 is 100% functional. Suggested fix: offset the Ama FAB (e.g., bottom-24 md:bottom-6) or raise its z-index above the badge (though Emergent badge may still layer above).", "selector": "[data-testid=\"ama-open\"]", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Global", "issues": ["Hydration warning in console: `<span> cannot be a child of <option>` — caused by Emergent instrumentation injecting spans inside <option>. Not a product bug; noise from preview environment."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Consider offsetting the Ama FAB position (e.g., bottom-24 right-6 on desktop) so the Emergent preview badge doesn't intercept its clicks in preview environments.",
+    "Optional: In hubtel_service.initiate_checkout, catch network errors and return HTTP 400 (or auto-fallback to sandbox) instead of surfacing 500 when live credentials are misconfigured."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 640 lines and holds all routes; consider splitting into modules (admin, public, payments) as the app grows.",
+    "storage_service.EmergentStorageBackend caches storage_key on the class instance but is a module-level singleton — a stale key on rotation would require restart. Consider TTL-based re-init or lazy retry on 401.",
+    "email_service.send always inserts to email_log with simulated=True initially, then flips to False on success — the log has both fields so this is fine, but if a resend send throws before the flag update, the entry stays simulated=True with error set (which is the intended behavior — good).",
+    "auth_utils.require_admin never checks that the admin actually still exists in DB (a deleted admin's token remains valid until expiry). Minor security hardening opportunity.",
+    "Payment confirm has no signature verification when Hubtel is live — the docstring notes this. In production this needs a Hubtel Status API call before flipping to paid.",
+    "Countries list is hard-coded — fine for a Ghana-only portal; acceptable."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py"
+  ],
+  "success_rate": {"backend": "100% (38/38 serial)", "frontend": "100% functional; Ama FAB blocked by preview badge in emergentagent.com preview only"},
+  "test_credentials": "Admin: admin@eghanavisa.com / Admin@2026New! (rotated from default Admin@2026 during first-login test). Backend seeds default admin with must_change_password=true; the pytest fixture handles the initial rotation.",
+  "seed_data_creation": "Backend startup seeds default admin, settings singleton, and 6 email templates (submitted/in_progress/done × en/fr). Tests inserted 3 paid applications visible in admin dashboard (2 marked done + 1 done via UI flow).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Admin password was rotated to Admin@2026New! during first-login flow. To re-run the full first-login flow from scratch, drop the admins collection or manually reset must_change_password. The pytest fixture already handles both paths (default and rotated).",
+  "rca of the issue": "AMA FAB overlap: Emergent preview environment injects `a#emergent-badge` fixed at bottom-right — same corner as AmaChat FAB. Playwright reports 'emergent-badge intercepts pointer events'. Mitigation: move Ama FAB or programmatically click via JS in automation. In production (eghanavisa.com without Emergent badge), Ama is expected to work normally. PAYMENT INITIATE PARALLEL FAILURE: pytest-xdist runs class-level test scope, so TestAdminSettings and TestApplicationFlow run concurrently on different workers. When test_hubtel_config_update briefly sets sandbox=false with fake credentials, a concurrent payment initiate uses that live-mode config and hits the real Hubtel URL, returning 500. Under `pytest -n 0` all tests pass. This is a test-isolation issue for shared server state, not a product bug."
+}
