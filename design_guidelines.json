@@ -1,0 +1,180 @@
+{
+  "theme": "light",
+  "archetype": "4 (Swiss & High-Contrast) customized for Government/Trust Portal",
+  "brand_identity": {
+    "vibe": "Official, Trustworthy, Modern, Proudly Ghanaian, Pixel-Crafted",
+    "logo_instructions": "SVG circle with Ghana flag colors (Red, Gold, Green) and the letter 'e' centered in black or white. Keep it clean and scalable."
+  },
+  "colors": {
+    "primary": {
+      "red": "#CE1126",
+      "gold": "#FCD116",
+      "green": "#006B3F",
+      "black": "#0A0A0A"
+    },
+    "backgrounds": {
+      "page": "#F8FAFC",
+      "card": "#FFFFFF",
+      "admin_sidebar": "#0A0A0A",
+      "admin_page": "#F1F5F9"
+    },
+    "text": {
+      "primary": "#0A0A0A",
+      "secondary": "#475569",
+      "muted": "#94A3B8",
+      "inverse": "#FFFFFF"
+    },
+    "semantic": {
+      "success": "#006B3F",
+      "warning": "#FCD116",
+      "danger": "#CE1126",
+      "info": "#0F172A",
+      "express": "#FCD116",
+      "regular": "#006B3F"
+    },
+    "borders": {
+      "subtle": "rgba(10, 10, 10, 0.08)",
+      "strong": "rgba(10, 10, 10, 0.2)"
+    }
+  },
+  "typography": {
+    "families": {
+      "heading": "Outfit, sans-serif",
+      "body": "Inter, sans-serif",
+      "numbers": "Outfit, sans-serif"
+    },
+    "scale": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl tracking-tight font-bold",
+      "h2": "text-3xl sm:text-4xl tracking-tight font-semibold",
+      "h3": "text-2xl sm:text-3xl tracking-tight font-semibold",
+      "h4": "text-xl sm:text-2xl font-medium",
+      "body_lg": "text-lg leading-relaxed",
+      "body": "text-base leading-relaxed",
+      "body_sm": "text-sm",
+      "overline": "text-xs tracking-[0.2em] uppercase font-bold"
+    }
+  },
+  "spacing": {
+    "system": "Tailwind standard scale with generous padding for macro layouts.",
+    "section_padding": "py-16 md:py-24",
+    "container": "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8",
+    "grid_gap": {
+      "bento": "gap-6 md:gap-8",
+      "dense": "gap-4"
+    }
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-[#006B3F] text-white hover:bg-[#005230] transition-colors rounded-md px-6 py-3 font-medium",
+      "secondary": "bg-white text-[#0A0A0A] border border-[#0A0A0A]/20 hover:bg-gray-50 transition-colors rounded-md px-6 py-3 font-medium",
+      "danger": "bg-[#CE1126] text-white hover:bg-[#A30D1E] transition-colors rounded-md px-6 py-3 font-medium",
+      "express": "bg-[#FCD116] text-[#0A0A0A] hover:bg-[#E5BC14] transition-colors rounded-md px-6 py-3 font-bold"
+    },
+    "cards": {
+      "default": "bg-white border border-[#0A0A0A]/10 rounded-xl shadow-sm",
+      "interactive": "bg-white border border-[#0A0A0A]/10 rounded-xl shadow-sm hover:shadow-md hover:-translate-y-1 transition-all",
+      "glass": "bg-white/80 backdrop-blur-xl border border-white/40 shadow-[0_8px_32px_rgba(0,0,0,0.04)] rounded-xl"
+    },
+    "inputs": {
+      "default": "w-full rounded-md border border-gray-300 px-4 py-2 text-[#0A0A0A] focus:border-[#006B3F] focus:ring-1 focus:ring-[#006B3F] outline-none transition-shadow",
+      "file": "border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition-colors cursor-pointer"
+    },
+    "visa_sample_card": {
+      "wrapper": "relative w-full aspect-[3/2] bg-[#F8FAFC] border-2 border-[#0A0A0A]/10 rounded-xl overflow-hidden shadow-lg",
+      "header": "h-12 bg-[#006B3F] flex items-center justify-center text-white font-heading font-bold uppercase tracking-widest text-sm",
+      "content": "p-4 grid grid-cols-3 gap-4",
+      "photo_box": "col-span-1 aspect-[3/4] bg-gray-200 rounded border border-gray-300 flex items-center justify-center",
+      "data_rows": "col-span-2 space-y-3",
+      "data_field": "flex flex-col",
+      "data_label": "text-[10px] text-gray-500 uppercase font-semibold",
+      "blurred_value": "h-4 bg-gray-300 rounded w-full filter blur-[2px] opacity-70",
+      "qr_mock": "absolute bottom-4 right-4 w-12 h-12 bg-gray-300 border border-gray-400 rounded-sm filter blur-[2px]"
+    },
+    "timeline": {
+      "container": "relative border-l-2 border-gray-200 ml-4 space-y-8",
+      "item": "relative pl-8",
+      "dot": "absolute -left-[9px] top-0 w-4 h-4 rounded-full border-2 border-white bg-gray-300",
+      "dot_active": "bg-[#006B3F]",
+      "dot_current": "bg-[#FCD116]"
+    },
+    "chat_widget": {
+      "button": "fixed bottom-6 right-6 w-14 h-14 bg-[#0A0A0A] text-[#FCD116] rounded-full shadow-xl flex items-center justify-center hover:scale-105 transition-transform z-50",
+      "window": "fixed bottom-24 right-6 w-80 bg-white border border-gray-200 rounded-xl shadow-2xl overflow-hidden z-50 flex flex-col h-96",
+      "header": "bg-[#0A0A0A] text-white p-4 font-heading font-medium flex justify-between items-center"
+    }
+  },
+  "page_blueprints": {
+    "Home": {
+      "hero": "Split layout. Left: High impact heading (Outfit font), trust badges, dual CTA (Apply Now, Track Visa). Right: Subtle visual containing 'Accra skyline' or 'passport travel' image with overlay.",
+      "how_it_works": "3-step visual grid (Submit Form -> Pay -> Receive Visa) using icons and short descriptions.",
+      "visa_types": "Pricing cards comparing Regular (5-7 days, Green theme) and Express (48-72h, Gold theme).",
+      "trust_section": "Security icons, secure payment badges, fast processing metrics."
+    },
+    "ApplicationForm": {
+      "layout": "2-column Desktop (grid-cols-12). Left (col-span-8): Multi-step form. Right (col-span-4): Sticky summary panel.",
+      "form_steps": "1. Personal details. 2. Passport details. 3. Travel dates (Departure date compliance warning here). 4. Uploads (Face, Passport Copy, Cover, Ticket).",
+      "live_summary": "Glassmorphism sticky card showing: Selected Visa Type, Processing Speed, Base Price, Surcharge (if Express), Total Price, and the Visa Sample Preview Card mock."
+    },
+    "Payment": {
+      "layout": "Narrow centered container (max-w-3xl).",
+      "content": "Order summary at top. Tabs or vertical stack for payment methods. Hubtel Visa/Mastercard form active. USDT slot styled as disabled with 'Coming Soon' badge."
+    },
+    "Tracking": {
+      "layout": "Minimalist centered layout.",
+      "search_box": "Large input field for Application ID + 'Track' button.",
+      "result": "Vertical Timeline component showing Submitted -> In Progress -> Done. Include status text and dates."
+    },
+    "AdminDashboard": {
+      "layout": "Sidebar navigation + Main content area ('Control Room' grid). Sidebar dark mode (#0A0A0A).",
+      "kpi_cards": "Top row of 4 cards: Total Applications, Revenue, Pending (Red alert color), Approved (Green success color).",
+      "table": "Dense data table. Columns: ID, Applicant, Date, Type, Status, Actions. Include filter/search bar.",
+      "actions_modal": "Slide-out or Dialog showing full applicant details and uploaded documents for review."
+    },
+    "AdminSettings": {
+      "layout": "Sidebar nav + Main area. Main area uses vertical or horizontal Tabs for the 5 sections.",
+      "sections": "1. Visa Prices (Inputs for base prices). 2. Visa Types (Toggle switches). 3. Payment Methods (Toggle switches for Hubtel/Crypto). 4. Hubtel Config (API Key inputs). 5. Communication (WhatsApp Number input, Email templates)."
+    },
+    "FAQ": {
+      "layout": "Narrow readable container (max-w-3xl).",
+      "content": "8 Accordion items. Clean, bordered style."
+    }
+  },
+  "media": {
+    "hero_backgrounds": [
+      {
+        "url": "https://images.unsplash.com/photo-1707209210229-a32ec4b62b51?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzOTB8MHwxfHNlYXJjaHw0fHxBY2NyYSUyMEdoYW5hJTIwbGFuZG1hcmt8ZW58MHx8fHwxNzgzNDM0NDg2fDA&ixlib=rb-4.1.0&q=85",
+        "description": "Accra landmark building, useful for hero background or subtle overlay",
+        "category": "hero"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1568025848823-86404cd04ad1?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzOTB8MHwxfHNlYXJjaHwxfHxBY2NyYSUyMEdoYW5hJTIwbGFuZG1hcmt8ZW58MHx8fHwxNzgzNDM0NDg2fDA&ixlib=rb-4.1.0&q=85",
+        "description": "Aerial view of Accra, useful for contextual trust sections",
+        "category": "background"
+      }
+    ],
+    "contextual_images": [
+      {
+        "url": "https://images.pexels.com/photos/19671961/pexels-photo-19671961.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Person holding a passport, perfect for 'How it works' or application form context",
+        "category": "context"
+      },
+      {
+        "url": "https://images.pexels.com/photos/6567674/pexels-photo-6567674.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Person proudly holding the Ghana flag, excellent for trust and national pride sections",
+        "category": "trust"
+      }
+    ]
+  },
+  "accessibility_and_motion": {
+    "motion": "Use crisp, quick transitions (150ms-200ms ease-out). No excessive bouncy animations to maintain official feel. Accordions and modals should slide and fade gracefully.",
+    "accessibility": "Ensure contrast ratios for text on Green and Red backgrounds. Use 'data-testid' on all form inputs, buttons, and summary elements for testing. Use sr-only labels for icon buttons."
+  },
+  "instructions_to_main_agent": [
+    "Strictly follow the color palette. Do not use generic tailwind blue or purple.",
+    "Install Google Fonts 'Inter' and 'Outfit'. Apply 'font-sans' to Inter and create a custom utility 'font-heading' mapped to Outfit in tailwind.config.js.",
+    "The visa sample preview card requires a customized CSS blur to simulate blurred text and QR codes. Implement this exactly as described in the components.visa_sample_card JSON node.",
+    "Admin dashboard must use a dense layout with precise alignment.",
+    "Always apply 'data-testid' to interactive elements.",
+    "Ensure 'Hubtel' payment integration is mocked visually if API isn't built yet, and disable the USDT option distinctly."
+  ]
+}
