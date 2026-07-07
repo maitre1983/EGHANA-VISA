@@ -100,7 +100,7 @@ export default function AdminSettings() {
                     </Card>
                 ))}
                 {tab === "hubtel" && <HubtelForm initial={s.hubtel} onSave={saveHubtel} />}
-                {tab === "nowpayments" && <NowPaymentsForm initial={s.nowpayments || {}} onSave={saveNowpayments} onTest={testNowpayments} />}
+                {tab === "nowpayments" && <NowPaymentsForm initial={s.nowpayments || {}} onSave={saveNowpayments} onTest={testNowpayments} discountPct={s.usdt_discount_pct || 0} onSaveDiscount={async (pct) => { await api.post("/admin/settings/usdt-discount", { pct }); toast.success("Discount saved"); reload(); }} />}
                 {tab === "other" && (
                     <>
                         <Card title="WhatsApp support number (used by Ama)">
@@ -198,7 +198,7 @@ const HubtelForm = ({ initial, onSave }) => {    const [f, setF] = useState(init
     );
 };
 
-const NowPaymentsForm = ({ initial, onSave, onTest }) => {
+const NowPaymentsForm = ({ initial, onSave, onTest, discountPct, onSaveDiscount }) => {
     const [f, setF] = useState({
         sandbox: initial.sandbox ?? true,
         api_key: initial.api_key || "",
@@ -206,6 +206,8 @@ const NowPaymentsForm = ({ initial, onSave, onTest }) => {
         sandbox_api_key: initial.sandbox_api_key || "",
         sandbox_ipn_secret: initial.sandbox_ipn_secret || "",
     });
+    const [pct, setPct] = useState(discountPct || 0);
+    useEffect(() => { setPct(discountPct || 0); }, [discountPct]);
     const set = (k, v) => setF((old) => ({ ...old, [k]: v }));
     const callbackUrl = `${(process.env.REACT_APP_BACKEND_URL || "").replace(/\/$/, "")}/api/webhooks/nowpayments`;
     const configured = f.sandbox
@@ -261,6 +263,17 @@ const NowPaymentsForm = ({ initial, onSave, onTest }) => {
             <div className="pt-4 border-t border-black/5 flex gap-2 flex-wrap">
                 <button onClick={() => onSave(f)} data-testid="np-save" className="bg-ghana-green text-white px-5 py-2.5 rounded-md text-sm font-medium inline-flex items-center gap-2 hover:bg-ghana-green-dark"><Save size={14} /> Save NowPayments</button>
                 <button onClick={onTest} data-testid="np-test" className="border border-black/10 px-5 py-2.5 rounded-md text-sm font-medium inline-flex items-center gap-2 hover:bg-slate-50">Test connection</button>
+            </div>
+
+            <div className="pt-4 border-t border-black/5">
+                <div className="font-heading font-semibold mb-1">USDT payment discount</div>
+                <div className="text-xs text-slate-500 mb-3">Boost crypto adoption by offering a small discount on USDT payments (0–50%). Applied automatically at checkout, before the NowPayments payment is created.</div>
+                <div className="flex items-center gap-2 max-w-xs">
+                    <input type="number" step="0.1" min="0" max="50" value={pct} onChange={(e) => setPct(e.target.value)} data-testid="usdt-discount-input"
+                        className="flex-1 border border-black/10 rounded-md px-3 py-2.5 text-sm focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none" />
+                    <span className="font-heading font-semibold text-lg">%</span>
+                    <button onClick={() => onSaveDiscount(parseFloat(pct) || 0)} data-testid="usdt-discount-save" className="bg-ghana-green text-white px-4 py-2.5 rounded-md text-sm font-medium inline-flex items-center gap-2 hover:bg-ghana-green-dark"><Save size={14} /> Save</button>
+                </div>
             </div>
         </div>
     );

@@ -64,6 +64,7 @@ export default function Payment() {
     const cryptoActive = (code) => (config?.payment_methods || []).find((p) => p.code === code)?.active;
     const cryptoAvailable = config?.nowpayments_configured;
     const hubtelActive = cryptoActive("hubtel_visa");
+    const discountPct = Number(config?.usdt_discount_pct || 0);
 
     return (
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-14">
@@ -108,7 +109,12 @@ export default function Payment() {
                         const visible = active && cryptoAvailable;
                         const comingSoon = !visible;
                         return (
-                            <div key={m.code} className={`bg-white rounded-xl border ${visible ? "border-black/10" : "border-black/5 opacity-60"} p-6`}>
+                            <div key={m.code} className={`bg-white rounded-xl border ${visible ? "border-black/10" : "border-black/5 opacity-60"} p-6 relative`}>
+                                {visible && discountPct > 0 && (
+                                    <span className="absolute -top-3 -right-3 bg-ghana-red text-white text-[11px] font-bold uppercase tracking-widest px-3 py-1 rounded-full shadow-md" data-testid={`${m.code}-discount-badge`}>
+                                        Save {discountPct}%
+                                    </span>
+                                )}
                                 <div className="flex items-center justify-between gap-4 flex-wrap">
                                     <div className="flex items-center gap-4">
                                         <div className="w-12 h-12 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600"><Bitcoin size={22} /></div>
@@ -117,7 +123,10 @@ export default function Payment() {
                                                 {m.label}
                                                 {comingSoon && <span className="text-[10px] uppercase tracking-widest bg-ghana-gold/40 text-ghana-black px-2 py-0.5 rounded font-bold">Coming Soon</span>}
                                             </div>
-                                            <div className="text-xs text-slate-500">{m.desc}</div>
+                                            <div className="text-xs text-slate-500">
+                                                {m.desc}
+                                                {visible && discountPct > 0 && <span className="ml-2 text-ghana-green font-semibold">· {discountPct}% off applied automatically</span>}
+                                            </div>
                                         </div>
                                     </div>
                                     <button onClick={() => startCrypto(m.network)} disabled={!visible || loading} data-testid={`payment-${m.code}-btn`}

@@ -32,6 +32,7 @@ DEFAULT_SETTINGS = {
     "max_upload_mb": 8,
     "whatsapp_admin": "+233000000000",
     "ai_model": "claude-sonnet-4-5-20250929",
+    "usdt_discount_pct": 0.0,
     "hubtel": {
         "sandbox": True,
         "api_id": "",

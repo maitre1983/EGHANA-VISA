@@ -69,6 +69,8 @@ async def startup():
         updates = {}
         if "nowpayments" not in existing_settings:
             updates["nowpayments"] = DEFAULT_SETTINGS["nowpayments"]
+        if "usdt_discount_pct" not in existing_settings:
+            updates["usdt_discount_pct"] = 0.0
         vt_list = existing_settings.get("visa_types", [])
         changed = False
         for vt in vt_list:
@@ -128,6 +130,7 @@ async def public_config():
         "hubtel_sandbox": is_sandbox(s.get("hubtel", {})),
         "nowpayments_configured": nowp.is_configured(np_cfg),
         "nowpayments_sandbox": bool(np_cfg.get("sandbox", True)),
+        "usdt_discount_pct": float(s.get("usdt_discount_pct", 0.0)),
     }
 
 
@@ -641,6 +644,20 @@ async def admin_update_nowpayments(payload: NowPaymentsConfigIn, ctx: dict = Dep
     return {"ok": True}
 
 
+class UsdtDiscountIn(BaseModel):
+    pct: float
+
+
+@api.post("/admin/settings/usdt-discount")
+async def admin_update_usdt_discount(payload: UsdtDiscountIn, ctx: dict = Depends(require_admin)):
+    pct = max(0.0, min(50.0, float(payload.pct)))  # clamp 0..50%
+    await db.settings.update_one(
+        {"id": "singleton"},
+        {"$set": {"usdt_discount_pct": pct, "updated_at": now_iso()}},
+    )
+    return {"ok": True, "usdt_discount_pct": pct}
+
+
 @api.post("/admin/settings/nowpayments/test")
 async def admin_test_nowpayments(ctx: dict = Depends(require_admin)):
     s = await get_settings()
@@ -693,10 +710,15 @@ async def crypto_initiate(payload: CryptoInitIn):
     pay_currency = nowp.CURRENCY_MAP[payload.network]
     ipn_url = f"{os.environ.get('PUBLIC_BASE_URL', '').rstrip('/')}/api/webhooks/nowpayments"
 
+    # Apply USDT discount if configured
+    discount_pct = float(s.get("usdt_discount_pct", 0.0) or 0.0)
+    original_amount = float(app_doc["amount_usd"])
+    price_amount = round(original_amount * (1 - discount_pct / 100.0), 2)
+
     try:
         result = nowp.create_payment(
             cfg,
-            price_amount=float(app_doc["amount_usd"]),
+            price_amount=price_amount,
             pay_currency=pay_currency,
             order_id=app_doc["tracking_no"],
             ipn_callback_url=ipn_url,
@@ -714,7 +736,9 @@ async def crypto_initiate(payload: CryptoInitIn):
         "pay_currency": pay_currency,
         "pay_address": result.get("pay_address"),
         "pay_amount": result.get("pay_amount"),
-        "price_amount_usd": app_doc["amount_usd"],
+        "price_amount_usd": price_amount,
+        "original_amount_usd": original_amount,
+        "discount_pct": discount_pct,
         "payment_status": result.get("payment_status", "waiting"),
         "actually_paid": None,
         "expiration_estimate_date": result.get("expiration_estimate_date"),
