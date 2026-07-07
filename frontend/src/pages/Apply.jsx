@@ -90,7 +90,7 @@ export default function Apply() {
             <div className="mb-8">
                 <div className="text-xs uppercase tracking-[0.25em] text-ghana-green font-semibold">Application</div>
                 <h1 className="mt-2 text-3xl md:text-4xl font-heading font-bold">Ghana Visa On Arrival Form</h1>
-                <p className="mt-3 text-slate-600">All fields are required. Documents must be JPEG, PNG or PDF (max {config?.max_upload_mb || 8} MB each).</p>
+                <p className="mt-3 text-slate-600">All fields and documents are <span className="font-semibold text-ghana-red">mandatory</span>. Documents must be JPEG, PNG or PDF (max {config?.max_upload_mb || 8} MB each).</p>
             </div>
 
             <div className="grid lg:grid-cols-12 gap-8">
@@ -188,7 +188,7 @@ export default function Apply() {
                                     <input type="file" accept=".jpg,.jpeg,.png,.pdf,image/*,application/pdf" className="hidden" data-testid={`apply-file-${d.key}`}
                                         onChange={(e) => setFile(d.key, e.target.files?.[0])} />
                                     {files[d.key] ? <CheckCircle2 size={24} className="text-ghana-green" /> : <Upload size={24} className="text-slate-500" />}
-                                    <div className="mt-2 font-medium text-sm">{d.label}</div>
+                                    <div className="mt-2 font-medium text-sm">{d.label} <span className="text-ghana-red" aria-hidden="true">*</span></div>
                                     <div className="mt-1 text-xs text-slate-500">
                                         {files[d.key] ? files[d.key].name : "JPEG · PNG · PDF"}
                                     </div>
@@ -274,7 +274,9 @@ const Section = ({ title, children }) => (
 );
 const Field = ({ label, children }) => (
     <div>
-        <label className="text-xs font-medium text-slate-600 uppercase tracking-wider">{label}</label>
+        <label className="text-xs font-medium text-slate-600 uppercase tracking-wider flex items-center gap-1">
+            {label} <span className="text-ghana-red" aria-hidden="true">*</span>
+        </label>
         <div className="mt-1.5">{children}</div>
     </div>
 );

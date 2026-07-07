@@ -84,7 +84,7 @@ export default function Home() {
                     {[
                         { icon: <ShieldCheck size={20} />, t: "Encrypted uploads" },
                         { icon: <Clock size={20} />, t: "48h Express" },
-                        { icon: <FileText size={20} />, t: "Official-style visa" },
+                        { icon: <FileText size={20} />, t: "Third-party portal" },
                         { icon: <Sparkles size={20} />, t: "AI-assisted (Ama)" },
                     ].map((x) => (
                         <div key={x.t} className="flex items-center gap-3 text-sm text-slate-700">
@@ -152,6 +152,120 @@ export default function Home() {
                                 )}
                             </div>
                         ))}
+                    </div>
+                </div>
+            </section>
+
+            {/* Discover Ghana — tourism showcase */}
+            <section className="bg-slate-50 py-24 overflow-hidden">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div className="max-w-2xl">
+                        <div className="text-xs uppercase tracking-[0.25em] text-ghana-green font-semibold">Discover Ghana</div>
+                        <h2 className="mt-3 text-3xl md:text-4xl font-heading font-bold">A country of gold, kente and a thousand stories</h2>
+                        <p className="mt-4 text-slate-600">From the Kwame Nkrumah Mausoleum to the great Ashanti kingdom, from Cape Coast to the world's finest cocoa fields — Ghana welcomes you with the warmest "Akwaaba".</p>
+                    </div>
+
+                    <div className="mt-14 grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+                        {[
+                            {
+                                title: "Kwame Nkrumah",
+                                subtitle: "Independence & Pan-African vision",
+                                img: "https://images.unsplash.com/photo-1568025848823-86404cd04ad1?crop=entropy&cs=srgb&fm=jpg&q=80&w=800",
+                                text: "Visit the mausoleum of Ghana's first president — the man who set Africa on the road to independence.",
+                            },
+                            {
+                                title: "Ashanti Kingdom",
+                                subtitle: "Kumasi · Golden Stool",
+                                img: "https://images.pexels.com/photos/6567674/pexels-photo-6567674.jpeg?auto=compress&cs=tinysrgb&w=800",
+                                text: "Step into a living kingdom of kente cloth, royal drums and the sacred Golden Stool at Manhyia Palace.",
+                            },
+                            {
+                                title: "Gold Coast Castles",
+                                subtitle: "Cape Coast · Elmina",
+                                img: "https://images.unsplash.com/photo-1707209210229-a32ec4b62b51?crop=entropy&cs=srgb&fm=jpg&q=80&w=800",
+                                text: "Walk the UNESCO-listed castles of the Gold Coast — a solemn, powerful chapter of world history.",
+                            },
+                            {
+                                title: "World-class Cocoa",
+                                subtitle: "Farm-to-bar chocolate",
+                                img: "https://images.unsplash.com/photo-1606312619070-d48b4c652a52?crop=entropy&cs=srgb&fm=jpg&q=80&w=800",
+                                text: "Ghana grows some of the world's finest cocoa. Meet the farmers and taste single-origin Ghanaian chocolate.",
+                            },
+                        ].map((c) => (
+                            <div key={c.title} className="group bg-white rounded-xl overflow-hidden border border-black/10 hover:shadow-lg transition-shadow" data-testid={`discover-${c.title.split(" ")[0].toLowerCase()}`}>
+                                <div className="relative h-48 overflow-hidden">
+                                    <img src={c.img} alt={c.title} loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                    <div className="absolute inset-0 bg-gradient-to-t from-ghana-black/60 to-transparent" />
+                                    <div className="absolute bottom-3 left-4 right-4">
+                                        <div className="text-[10px] uppercase tracking-widest text-ghana-gold font-bold">{c.subtitle}</div>
+                                        <div className="font-heading text-lg font-bold text-white">{c.title}</div>
+                                    </div>
+                                </div>
+                                <div className="p-5">
+                                    <p className="text-sm text-slate-600 leading-relaxed">{c.text}</p>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </section>
+
+            {/* Taste of Ghana */}
+            <section className="bg-white py-24">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div className="grid md:grid-cols-2 gap-14 items-center">
+                        <div className="relative order-2 md:order-1">
+                            <div className="absolute -top-4 -left-4 w-40 h-40 rounded-full bg-ghana-red/20 blur-3xl" />
+                            <div className="absolute -bottom-4 -right-4 w-40 h-40 rounded-full bg-ghana-gold/30 blur-3xl" />
+                            <div className="relative grid grid-cols-2 gap-4">
+                                <img
+                                    src="https://images.unsplash.com/photo-1604909052743-94e838986d24?crop=entropy&cs=srgb&fm=jpg&q=80&w=700"
+                                    alt="Jollof rice"
+                                    loading="lazy"
+                                    className="rounded-xl w-full h-56 object-cover shadow-lg"
+                                />
+                                <img
+                                    src="https://images.unsplash.com/photo-1626082927389-6cd097cdc6ec?crop=entropy&cs=srgb&fm=jpg&q=80&w=700"
+                                    alt="African plantain"
+                                    loading="lazy"
+                                    className="rounded-xl w-full h-56 object-cover shadow-lg mt-8"
+                                />
+                                <img
+                                    src="https://images.unsplash.com/photo-1567982047351-76b6f93e38ee?crop=entropy&cs=srgb&fm=jpg&q=80&w=700"
+                                    alt="Grilled tilapia"
+                                    loading="lazy"
+                                    className="rounded-xl w-full h-56 object-cover shadow-lg"
+                                />
+                                <img
+                                    src="https://images.unsplash.com/photo-1516684732162-798a0062be99?crop=entropy&cs=srgb&fm=jpg&q=80&w=700"
+                                    alt="Ghanaian market spices"
+                                    loading="lazy"
+                                    className="rounded-xl w-full h-56 object-cover shadow-lg mt-8"
+                                />
+                            </div>
+                        </div>
+                        <div className="order-1 md:order-2">
+                            <div className="text-xs uppercase tracking-[0.25em] text-ghana-red font-semibold">A taste of Ghana</div>
+                            <h2 className="mt-3 text-3xl md:text-4xl font-heading font-bold">Come hungry. Leave in love.</h2>
+                            <p className="mt-4 text-slate-600">Ghanaian cuisine is bold, spicy and generous. From the legendary <em>Jollof rice</em> — the pride of Accra — to smoked tilapia straight from the coast, every plate tells a story.</p>
+                            <ul className="mt-8 grid grid-cols-2 gap-3 text-sm">
+                                {[
+                                    ["Jollof rice", "The West-African icon"],
+                                    ["Waakye", "Rice & beans, weekend classic"],
+                                    ["Banku & Tilapia", "Fermented corn dough + grilled fish"],
+                                    ["Fufu & light soup", "Cassava · plantain · goat"],
+                                    ["Red Red", "Bean stew with fried plantain"],
+                                    ["Kelewele", "Spicy fried plantain snack"],
+                                    ["Kenkey", "Steamed corn dumpling"],
+                                    ["Chinchinga", "Suya-style street kebabs"],
+                                ].map(([dish, sub]) => (
+                                    <li key={dish} className="p-3 rounded-lg border border-black/5 bg-slate-50">
+                                        <div className="font-heading font-semibold text-ghana-black">{dish}</div>
+                                        <div className="text-xs text-slate-500 mt-0.5">{sub}</div>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
                     </div>
                 </div>
             </section>

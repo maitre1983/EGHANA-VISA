@@ -10,7 +10,7 @@ export default function Footer() {
                     <div className="[&_span]:text-white [&_.font-heading]:text-white">
                         <Logo />
                     </div>
-                    <p className="text-sm text-white/60 mt-4">Official-style portal for Ghana Visa On Arrival applications. Secure, fast and transparent.</p>
+                    <p className="text-sm text-white/60 mt-4">Third-party portal for Ghana Visa On Arrival applications. Secure, fast and transparent.</p>
                 </div>
                 <div>
                     <h4 className="text-white font-heading font-semibold mb-3 text-sm uppercase tracking-widest">Services</h4>
