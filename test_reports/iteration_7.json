@@ -1,0 +1,45 @@
+{
+  "summary": "Iteration 7 real-Resend delivery verification: 20/20 pytest passed (11 new iteration_7 + 9 iteration_6 regression). Confirmed (a) POST /api/admin/email/test requires admin JWT — returns 401/403 without token and with an invalid token; (b) one REAL Resend send to contact@eghanavisa.com with template 'submitted'/en returned {ok:true, simulated:false, resend_id:<uuid>, error:null} and a matching entry appears in /api/admin/email-log with simulated=false; (c) bilingual template rendering for in_progress/fr, done/fr and in_progress/en all substitute {{name}}→'Test Recipient' and {{tracking}}→'GH-2026-TEST01' with ZERO leftover placeholder occurrences (verified via regex over subject+html of the stored log entry); (d) posting to liportalmerchand@gmail.com correctly degrades to HTTP 200 with simulated:true and error populated (Resend TEST-mode restriction on unverified domain) — server does NOT 500 or crash, and the log entry mirrors the failure; (e) unknown template_name does not crash the server (server.py returns 500 from render_template's RuntimeError, and /api/config remains 200 immediately after); (f) full E2E — created a fresh application (visa_code=tourist_30, processing=regular, email=contact@eghanavisa.com), confirmed Hubtel-sandbox payment via /api/payments/confirm, verified the 'submitted' email was sent REAL via Resend (simulated=false, resend_id present); (g) admin status transitions in_progress → done still trigger real Resend sends for both templates and are logged. Iteration-6 regressions (startup helpers idempotency, countries.py type hints, seed_data.py Mongo/JSON safety, /api/countries ECOWAS filter, USDT sandbox E2E, Ama chat) all still pass. RESEND_API_KEY is present in /app/backend/.env; backend started with no crash on the new secret; /api/config still exposes all visa types correctly.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration7.py",
+    "/app/backend/tests/test_iteration6.py",
+    "/app/test_reports/pytest/iteration_7_results.xml"
+  ],
+  "action_items": [
+    "Production-readiness for Resend (user action, NOT a code bug): verify eghanavisa.com in the Resend dashboard so delivery to arbitrary applicant email addresses becomes real (simulated=false) instead of degrading to simulated=true. Until then, all external recipients (e.g. gmail addresses) will land in the email_log with simulated=true and error='Resend restriction'.",
+    "Optional (defense-in-depth): in EmailService.send, when Resend returns a restriction error, consider surfacing a friendlier error string in entry['error'] (e.g. strip the Resend response boilerplate) so admins in /admin/templates can see 'domain not verified' at a glance.",
+    "Optional (config hardening): SENDER_EMAIL currently defaults to onboarding@resend.dev which is a valid Resend sandbox sender. Once eghanavisa.com is verified, switch SENDER_EMAIL to noreply@eghanavisa.com or similar."
+  ],
+  "critical_code_review_comments": [
+    "email_service.py: send() correctly wraps resend.Emails.send in asyncio.to_thread — no event-loop blocking. Exception handler catches broadly and stores str(e) in entry['error'] then still inserts into email_log — this is the correct graceful-degradation pattern requested by the review. Nit: entry.pop('_id', None) is defensive but insert_one won't add _id to the dict passed if we already dict()-copied it (which we do). Safe but redundant.",
+    "server.py: TestEmailIn uses pydantic EmailStr which correctly validates recipient shape (422 on malformed emails — not explicitly tested, but standard behavior). Endpoint signature admin_send_test_email(payload, ctx=Depends(require_admin)) is textbook; no auth bypass path.",
+    "server.py: /api/admin/email/test returns a stable JSON shape {ok, simulated, resend_id, error, subject}. Good — this is what the test contract expects. Consider adding 'log_id' (entry['id']) to the response so the admin UI can deep-link into the email-log row.",
+    "Unknown template handling: email_service.render_template raises RuntimeError which propagates as an HTTP 500. Requirements said either 500 or graceful fallback is acceptable, so this is fine — but if you want cleaner API semantics, catching in the endpoint and returning 400 with a clear message would be nicer (currently returns FastAPI's default 500 body).",
+    "Restriction path stores the Resend error message verbatim (a JSON blob from Resend). That is fine for diagnostics but a bit ugly in the admin UI. Consider parsing the JSON and pulling out .message for entry['error'].",
+    "backend/.env: RESEND_API_KEY committed to .env is a real production secret — recommend rotating it and using .env.example instead. Also confirm this repo is private."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration7.py",
+    "/app/test_reports/iteration_7.json",
+    "/app/test_reports/pytest/iteration_7_results.xml"
+  ],
+  "success_rate": {
+    "backend": "100% (20/20 across iteration_7.py + iteration_6.py regression)",
+    "frontend": "N/A — backend-only testing per review request"
+  },
+  "test_credentials": "Admin: admin@eghanavisa.com / Admin@2026New!  |  Real Resend recipient: contact@eghanavisa.com (account owner)",
+  "seed_data_creation": "One TEST application created via E2E (visa_code=tourist_30, email=contact@eghanavisa.com, processing=regular). Payment confirmed to 'paid' via /api/payments/confirm, then transitioned in_progress → done. Left in status='done'. ~7 new rows in db.email_log: 1 real submitted to owner (dedicated test), 3 rendered-only rows for restricted address (bilingual template test — all simulated=true with error), 1 restricted-address 'submitted' (simulated=true), 1 unknown_template rejection (raised 500, no log row), 1 real submitted from E2E, 1 real in_progress, 1 real done. Total real Resend API calls: 3 (all to contact@eghanavisa.com). No spam.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 7 adds POST /api/admin/email/test and enables real Resend delivery via RESEND_API_KEY. Resend account is in TEST/UNVERIFIED-DOMAIN mode → the ONLY recipient it will accept as real is contact@eghanavisa.com. Any other recipient (including liportalmerchand@gmail.com) will be recorded as simulated=true with error populated — this is by-design graceful degradation, NOT a bug. When adding new tests, use RESTRICTED_EMAIL=liportalmerchand@gmail.com for template-rendering assertions (no real network cost) and reserve OWNER_EMAIL=contact@eghanavisa.com for the one or two tests that must prove real delivery (each test costs one real Resend API call). test_iteration7.py + test_iteration6.py + test_iteration5.py form the recommended regression suite. Server.py is now 1020 lines — the iteration-5 recommendation to split into routers/{admin,payments,applications}.py still stands. Emergent 'Made with Emergent' badge intercepts pointer events at bottom-right; hide it in Playwright scripts if any UI testing is needed later.",
+  "rca of the issue": "N/A — iteration-7 is a feature add (real Resend delivery + admin test endpoint), not a bug fix. The 'liportalmerchand@gmail.com not delivered' behavior reported in the review context is a Resend TEST-mode business rule (unverified sender domain restricts recipients to the account owner), NOT a code defect. Fix path is out-of-band: verify eghanavisa.com in the Resend dashboard, after which the exact same code will deliver to any recipient without further changes."
+}

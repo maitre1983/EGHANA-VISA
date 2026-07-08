@@ -29,8 +29,9 @@ export default function Footer() {
                     </ul>
                 </div>
                 <div>
-                    <h4 className="text-white font-heading font-semibold mb-3 text-sm uppercase tracking-widest">Ghana</h4>
-                    <p className="text-sm text-white/60">Comptroller-General of Immigration<br/>Republic of Ghana</p>
+                    <h4 className="text-white font-heading font-semibold mb-3 text-sm uppercase tracking-widest">Contact</h4>
+                    <a href="mailto:contact@eghanavisa.com" data-testid="footer-contact-email" className="text-sm text-white/80 hover:text-ghana-gold break-all">contact@eghanavisa.com</a>
+                    <p className="text-xs text-white/50 mt-3">Comptroller-General of Immigration<br/>Republic of Ghana</p>
                     <div className="mt-4 h-1 w-24 ghana-stripe-h rounded-sm"></div>
                 </div>
             </div>

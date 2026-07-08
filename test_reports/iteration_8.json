@@ -1,0 +1,41 @@
+{
+  "summary": "Iteration 8 verified: (a) 6/6 backend pytest passed — POST /api/admin/email/test now delivers REAL Resend emails to arbitrary recipient liportalmerchand@gmail.com (simulated:false, resend_id present as UUID, error:null) after eghanavisa.com domain verification + SENDER_EMAIL=noreply@eghanavisa.com; (b) full E2E Apply → Hubtel-sandbox pay → in_progress → done all delivered REAL via Resend (all three template emails logged with simulated=false and non-null resend_id, tracking-scoped match to avoid false-positives); (c) /api/config still returns full payload after env change + backend restart; (d) admin JWT still enforced on the email test endpoint (401/403 without / with invalid token); (e) HTML source is clean — no #emergent-badge anchor, no 'Made with Emergent' text, no emergent-main.js script, no posthog init/global (verified via curl to preview root and via page.evaluate on live DOM); (f) <link rel='icon' type='image/png' href='/favicon.png'> and apple-touch-icon both present; /favicon.png returns HTTP 200 with content-type: image/png; file on disk is a valid 868KB PNG (magic bytes 89 50 4E 47…); (g) Header.jsx mobile menu works — hamburger [data-testid=header-mobile-toggle] visible only at <768px, hidden at 768px+ and 1920px; clicking it reveals [data-testid=header-mobile-menu] containing all 5 nav-mobile-{home,apply,track,prices,faq} plus Apply Now CTA, and menu closes after nav item click; desktop nav hidden on mobile, visible on tablet+; (h) Home page hero stacks vertically on mobile (single column, verified via screenshot at 390x844); Apply page renders 18 input/select/textarea elements fully usable at 390 width, form sections stack single-column; (i) Footer [data-testid=footer-contact-email] displays exactly 'contact@eghanavisa.com' with mailto:contact@eghanavisa.com href on mobile, tablet, and desktop.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/apply (dev mode)", "issues": ["React hydration warning: <span data-ve-dynamic> injected inside <option> by the visual-editor dev overlay causes 'span cannot be a child of option' console error. Pre-existing dev-only artifact (visual editor injects x-source-var spans into every dynamic child, including <option>); does not affect functionality — the <select> still renders correct visa labels and value/onChange works. Consider suppressing overlay injection on <option> children or filtering it out in production build."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration8.py",
+    "/app/test_reports/pytest/iteration_8_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "email_service.py:72 falls back to onboarding@resend.dev if SENDER_EMAIL is missing — with domain now verified, consider REQUIRING SENDER_EMAIL and failing fast at startup instead of silently falling back to the sandbox sender (would prevent regressions if env is misconfigured).",
+    "index.html is clean of Emergent branding, but the noscript block is still bare 'You need to enable JavaScript to run this app.' — consider a Ghana-visa-branded fallback message for SEO/no-JS crawlers.",
+    "favicon.png is 868KB — large for a favicon. Consider a size-optimised 32x32 / 192x192 pair (PNG or WebP) referenced separately, plus keep the current PNG only as apple-touch-icon. Not blocking but improves mobile performance and Lighthouse score.",
+    "Apply.jsx still triggers a React hydration console warning at every mobile page load due to visual-editor overlay injecting <span> inside <option>. Pre-existing (not iteration-8 regression). Cleanest fix: strip x-source-var injection for children of <option> in the visual editor, OR wrap option children in a String() to avoid the extra element.",
+    "server.py still 1000+ lines — iteration-5/6/7 recommendation to split into routers/ remains valid but out of scope for iteration 8."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration8.py",
+    "/app/test_reports/iteration_8.json",
+    "/app/test_reports/pytest/iteration_8_results.xml"
+  ],
+  "success_rate": {
+    "backend": "100% (6/6 iteration_8 pytest)",
+    "frontend": "100% (mobile menu, favicon, emergent-branding removal, footer contact email — all confirmed at 390x844, 768x1024, and 1920x1080)"
+  },
+  "test_credentials": "Admin: admin@eghanavisa.com / Admin@2026New!  |  Real Resend recipient tested: liportalmerchand@gmail.com (delivered successfully post-domain-verification)",
+  "seed_data_creation": "1 test application (visa_code=tourist_30, email=liportalmerchand@gmail.com, processing=regular) created via E2E, payment confirmed 'paid' via Hubtel-sandbox, status transitioned to in_progress then done. ~4 REAL Resend sends recorded in db.email_log (all to liportalmerchand@gmail.com): 1 direct admin/email/test call, 1 submitted (E2E), 1 in_progress, 1 done. Total real Resend API calls: 4 (well under spam threshold).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 8 lifts the Resend TEST-mode restriction: eghanavisa.com is now verified and SENDER_EMAIL=noreply@eghanavisa.com — arbitrary recipients (gmail, etc.) now receive REAL emails (simulated=false, resend_id populated). Real-delivery test target used: liportalmerchand@gmail.com. Frontend now has Header.jsx mobile menu with [data-testid=header-mobile-toggle] / [data-testid=header-mobile-menu] / [data-testid=nav-mobile-{home,apply,track,prices,faq}] — use these testids for any future responsive tests at 390x844 or 768x1024. Emergent branding fully removed from index.html — future testers no longer need to hide any bottom-right badge in Playwright scripts. Favicon is /favicon.png (868KB Ghana-flag PNG). Footer contact email selector: [data-testid=footer-contact-email]. Pre-existing dev-only React hydration warning on /apply (span inside option) is from the visual-editor overlay, not a functional bug.",
+  "rca of the issue": "N/A — iteration 8 is a feature + polish change (domain-verified real Resend delivery, Emergent branding removal, favicon, mobile responsive nav, footer contact email). No bug fix required; all 6 backend tests and all frontend responsive checks passed on first run."
+}

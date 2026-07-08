@@ -651,6 +651,37 @@ async def admin_email_log(ctx: dict = Depends(require_admin)):
     return await db.email_log.find({}, {"_id": 0}).sort("created_at", -1).limit(100).to_list(100)
 
 
+class TestEmailIn(BaseModel):
+    recipient: EmailStr
+    template_name: str = "submitted"
+    lang: str = "en"
+
+
+@api.post("/admin/email/test")
+async def admin_send_test_email(payload: TestEmailIn, ctx: dict = Depends(require_admin)):
+    """Send a sample email using an existing template to verify Resend delivery."""
+    context = {
+        "name": "Test Recipient",
+        "tracking": "GH-2026-TEST01",
+        "visa_type": "30 Days Tourist Visa",
+        "processing": "Regular",
+        "amount": "350.00",
+    }
+    entry = await email_svc.send(
+        recipient=payload.recipient,
+        template_name=payload.template_name,
+        context=context,
+        lang=payload.lang,
+    )
+    return {
+        "ok": True,
+        "simulated": entry.get("simulated"),
+        "resend_id": entry.get("resend_id"),
+        "error": entry.get("error"),
+        "subject": entry.get("subject"),
+    }
+
+
 # ────────────────── NOWPAYMENTS (USDT) ──────────────────
 class NowPaymentsConfigIn(BaseModel):
     sandbox: bool = True
