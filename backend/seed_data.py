@@ -64,6 +64,8 @@ BASE_CSS = "font-family:Inter,Arial,sans-serif;color:#0A0A0A;line-height:1.6;"
 BOX = "border:1px solid #e5e7eb;border-radius:12px;padding:24px;max-width:560px;margin:24px auto;background:#fff;"
 BADGE = "display:inline-block;padding:4px 10px;border-radius:999px;background:#006B3F;color:#fff;font-weight:600;letter-spacing:1px;font-size:12px;"
 
+EMAIL_TEMPLATES_VERSION = 2  # bump to force re-seed of email_templates on next startup
+
 
 def _wrap(title, body_html):
     return f"""<div style="{BASE_CSS}background:#F8FAFC;padding:24px 0;">
@@ -78,6 +80,11 @@ def _wrap(title, body_html):
     <p style="font-size:12px;color:#64748b;margin:0;">eghanavisa.com — Ghana Visa On Arrival Portal</p>
   </div>
 </div>"""
+
+
+def _badge(label):
+    """Return a Ghana-green badge HTML snippet without str.format (preserves {{placeholders}})."""
+    return '<span style="' + BADGE + '">' + label + '</span>'
 
 
 DEFAULT_EMAIL_TEMPLATES = [
@@ -120,9 +127,9 @@ DEFAULT_EMAIL_TEMPLATES = [
             "In Progress",
             """
 <p>Dear {{name}},</p>
-<p>Good news — your application <strong>{{tracking}}</strong> has moved to <span style="{}">IN PROGRESS</span>.</p>
+<p>Good news — your application <strong>{{tracking}}</strong> has moved to """ + _badge("IN PROGRESS") + """.</p>
 <p>Our team is now reviewing your file. You will receive another email as soon as it is approved.</p>
-""".format(BADGE),
+""",
         ),
     ),
     _tpl(
@@ -132,9 +139,9 @@ DEFAULT_EMAIL_TEMPLATES = [
             "En cours",
             """
 <p>Bonjour {{name}},</p>
-<p>Bonne nouvelle — votre demande <strong>{{tracking}}</strong> est passée à l'étape <span style="{}">EN COURS</span>.</p>
+<p>Bonne nouvelle — votre demande <strong>{{tracking}}</strong> est passée à l'étape """ + _badge("EN COURS") + """.</p>
 <p>Notre équipe examine votre dossier. Vous recevrez un autre e-mail dès qu'il sera approuvé.</p>
-""".format(BADGE),
+""",
         ),
     ),
     _tpl(
@@ -144,10 +151,10 @@ DEFAULT_EMAIL_TEMPLATES = [
             "Visa Approved",
             """
 <p>Dear {{name}},</p>
-<p>Congratulations — your Ghana Visa On Arrival <strong>{{tracking}}</strong> has been <span style="{}">APPROVED</span>.</p>
+<p>Congratulations — your Ghana Visa On Arrival <strong>{{tracking}}</strong> has been """ + _badge("APPROVED") + """.</p>
 <p>Your electronic visa will be delivered to this email address shortly. Please travel with the printed copy and your passport.</p>
 <p>Enjoy your stay in Ghana. 🇬🇭</p>
-""".format(BADGE),
+""",
         ),
     ),
     _tpl(
@@ -157,10 +164,10 @@ DEFAULT_EMAIL_TEMPLATES = [
             "Visa approuvé",
             """
 <p>Bonjour {{name}},</p>
-<p>Félicitations — votre visa Ghana à l'arrivée <strong>{{tracking}}</strong> a été <span style="{}">APPROUVÉ</span>.</p>
+<p>Félicitations — votre visa Ghana à l'arrivée <strong>{{tracking}}</strong> a été """ + _badge("APPROUVÉ") + """.</p>
 <p>Votre visa électronique sera envoyé à cette adresse e-mail sous peu. Voyagez avec la version imprimée et votre passeport.</p>
 <p>Excellent séjour au Ghana. 🇬🇭</p>
-""".format(BADGE),
+""",
         ),
     ),
 ]

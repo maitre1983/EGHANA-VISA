@@ -1,0 +1,40 @@
+{
+  "summary": "Iteration 5 backend regression: verified fix for CRITICAL email-template substitution regression from iteration 4. All 17 pytest tests passed (100%). Confirmed (a) db.template_versions has {id:'email_templates', version:2}, (b) all 6 seeded templates (submitted/in_progress/done x en/fr) contain double-brace {{name}} / {{tracking}} placeholders in DB with ZERO single-brace leakage, (c) EmailService.render_template() substitutes all placeholders (name, tracking, visa_type, processing, amount) for every template/lang combo with no leftovers, (d) end-to-end status transition flow (create app -> USDT sandbox pay -> admin sets in_progress -> admin sets done) writes properly-worded emails to db.email_log with actual applicant name and tracking number (no literal {name} or {tracking} anywhere in html or subject). Regression smoke on /api/config, admin login, KPIs, applications list, Ama chat, and all 6 admin settings tabs (visa price, visa toggle guard, payment toggle, hubtel, nowpayments, usdt-discount, whatsapp, ai-model, email templates listing) — all passed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration5.py",
+    "/app/test_reports/pytest/iteration_5_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "seed_data.py:_badge() helper now correctly concatenates BADGE style + label without triggering str.format() brace-escaping — good fix. Consider adding a unit-level assertion at import time (or a small startup guard) that scans DEFAULT_EMAIL_TEMPLATES for any occurrence of single-brace {name}/{tracking}/{visa_type}/{processing}/{amount} and fails fast — this would prevent this class of regression permanently.",
+    "server.py:89-100 — versioned re-seed migration is clean and idempotent. Nit: the collection name 'template_versions' is generic; if more collections need versioned migrations in the future consider a single 'schema_migrations' collection keyed by id. Not blocking.",
+    "email_service.py:19-20 — string-concat trick '{'+'{' to appease a code scanner is still fragile/confusing. Consider adding a short docstring comment explaining WHY it's split and referencing the false-positive scanner rule. Or replace naive replace() with `string.Template` (uses $name syntax) to sidestep the ambiguity entirely. Not blocking.",
+    "server.py — still 972 lines; recommend future split into routers/admin.py, routers/payments.py, routers/applications.py. Non-blocking, tracking for future iteration.",
+    "email_service.py — render_template does string.replace() per-key which is O(n*m); fine for current volume but if templates ever grow, batch via a single regex or precompile. Non-blocking.",
+    "server.py:444-464 admin_set_status — context dict only has name+tracking; the 'submitted' template also uses {{visa_type}}, {{processing}}, {{amount}}. For in_progress/done transitions those aren't in the template body so no issue, but if an admin ever renames a template to include those tokens the email would ship with literal placeholders. Consider always passing the full context (dict with app_doc fields) to render_template."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration5.py",
+    "/app/test_reports/iteration_5.json",
+    "/app/test_reports/pytest/iteration_5_results.xml"
+  ],
+  "success_rate": {
+    "backend": "100% (17/17)",
+    "frontend": "not tested (backend-only per review request)"
+  },
+  "test_credentials": "Admin: admin@eghanavisa.com / Admin@2026New! (working)",
+  "seed_data_creation": "Created 1 fresh TEST application with USDT-simulated paid state during E2E flow (email=test.alice.iter5@example.com, tracking=GH-2026-XXXXXX, moved to status='done'). db.email_log has 3 new entries (submitted, in_progress, done) for that applicant — all verified correctly substituted. USDT trc20 payment method left ACTIVE (was already active before run per iteration-4 state note). usdt_discount_pct set to 10.0 (matches state restored before this run).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration-4 CRITICAL regression is FIXED and verified. Fix summary: (1) seed_data.py added _badge() helper to avoid Python's str.format() brace-escaping problem — now all six templates keep their {{name}}/{{tracking}}/etc. placeholders intact. (2) seed_data.py added EMAIL_TEMPLATES_VERSION=2 constant. (3) server.py startup replaced count-based idempotency guard with versioned re-seed via db.template_versions collection — bumping the constant now triggers a full wipe+reseed on next startup. This is the correct architectural pattern for template migrations going forward. Backend logs contain 'Re-seeded email templates to version 2' on the startup that ran this migration. No open issues. Test file /app/backend/tests/test_iteration5.py can be used as regression suite by future testing agents (17 tests, ~6s runtime).",
+  "rca of the issue": "Fixed in this iteration. Root cause was that iteration-3 or earlier had used _wrap(...).format(BADGE) on 4 of 6 seeded templates. Python's str.format() interprets {{...}} as escaped-literal single-brace {...}. Combined with iteration-4's email_service.py refactor that changed the substitution delimiter to double-brace {{...}}, this created a mismatch: the 4 formatted templates ended up with single-brace placeholders in the DB that the new delimiter couldn't match, so users would receive emails containing literal 'Dear {name}, your application {tracking}...'. Fix applied: (1) seed_data.py._badge(label) helper concatenates strings instead of using .format(), preserving double-brace placeholders. (2) EMAIL_TEMPLATES_VERSION=2 constant added, and server.py startup now does a versioned re-seed (delete_many + insert_many) whenever the DB's stored version is below the code's EMAIL_TEMPLATES_VERSION. Verification: iteration_5 test suite exercises (a) DB shape check (all 6 templates have double-brace, no single-brace anywhere), (b) render_template call for all 6 combos with a full context, (c) full E2E status transition flow with email_log inspection — all pass."
+}

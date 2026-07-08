@@ -20,7 +20,7 @@ from email_service import EmailService
 from hubtel_service import initiate_checkout, is_sandbox
 from ama_chat import ask_ama
 import nowpayments_service as nowp
-from seed_data import DEFAULT_SETTINGS, DEFAULT_EMAIL_TEMPLATES
+from seed_data import DEFAULT_SETTINGS, DEFAULT_EMAIL_TEMPLATES, EMAIL_TEMPLATES_VERSION
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -86,10 +86,18 @@ async def startup():
             await db.settings.update_one({"id": "singleton"}, {"$set": updates})
             logger.info(f"Patched settings with: {list(updates.keys())}")
 
-    # Seed email templates
-    if await db.email_templates.count_documents({}) == 0:
+    # Seed email templates — versioned, force re-seed on version bump
+    tpl_version_doc = await db.template_versions.find_one({"id": "email_templates"}, {"_id": 0})
+    current_version = (tpl_version_doc or {}).get("version", 0)
+    if current_version < EMAIL_TEMPLATES_VERSION:
+        await db.email_templates.delete_many({})
         await db.email_templates.insert_many([dict(t) for t in DEFAULT_EMAIL_TEMPLATES])
-        logger.info("Seeded default email templates")
+        await db.template_versions.update_one(
+            {"id": "email_templates"},
+            {"$set": {"version": EMAIL_TEMPLATES_VERSION, "updated_at": now_iso()}},
+            upsert=True,
+        )
+        logger.info(f"Re-seeded email templates to version {EMAIL_TEMPLATES_VERSION}")
 
 
 # ────────────────────────── HELPERS ──────────────────────────
