@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { CreditCard, Bitcoin, ShieldCheck, CheckCircle2, Loader2, Copy, Clock } from "lucide-react";
 import { toast } from "sonner";
 import api from "../lib/api";
+import { log } from "../lib/log";
 
 export default function Payment() {
     const { tracking } = useParams();
@@ -59,7 +60,7 @@ export default function Payment() {
                         toast.error("Payment failed or expired");
                     }
                 } catch (err) {
-                    console.warn("Crypto status poll failed (will retry):", err?.message || err);
+                    log.warn("Crypto status poll failed (will retry):", err?.message || err);
                 }
             }, 15000);
         } catch (e) {

@@ -1,24 +1,25 @@
 """Default seed values for settings and email templates."""
 from datetime import datetime, timezone
+from typing import List, Dict, Any
 
 
-def _now():
+def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-DEFAULT_VISA_TYPES = [
+DEFAULT_VISA_TYPES: List[Dict[str, Any]] = [
     {"code": "tourist_30", "name_en": "30 Days Tourist Visa", "name_fr": "Visa touristique 30 jours", "days": 30, "price_usd": 350.0, "active": True, "always_active": True, "express_available": True, "processing_time_label": "5–7 business days", "requires_presence": False},
     {"code": "extended_60", "name_en": "60 Days Extended Visa", "name_fr": "Visa étendu 60 jours", "days": 60, "price_usd": 500.0, "active": False, "always_active": False, "express_available": True, "processing_time_label": "5–7 business days", "requires_presence": False},
     {"code": "residence_1y", "name_en": "1 Year Residence Permit", "name_fr": "Permis de résidence 1 an", "days": 365, "price_usd": 1200.0, "active": False, "always_active": False, "express_available": False, "processing_time_label": "45–60 days · in-country presence required", "requires_presence": True},
 ]
 
-DEFAULT_PAYMENT_METHODS = [
+DEFAULT_PAYMENT_METHODS: List[Dict[str, Any]] = [
     {"code": "hubtel_visa", "name": "Visa Card via Hubtel", "active": True, "always_active": False},
     {"code": "usdt_trc20", "name": "USDT (TRC20)", "active": False, "always_active": False},
     {"code": "usdt_bep20", "name": "USDT (BEP20)", "active": False, "always_active": False},
 ]
 
-DEFAULT_NOWPAYMENTS = {
+DEFAULT_NOWPAYMENTS: Dict[str, Any] = {
     "sandbox": True,
     "api_key": "",
     "ipn_secret": "",
@@ -26,7 +27,7 @@ DEFAULT_NOWPAYMENTS = {
     "sandbox_ipn_secret": "",
 }
 
-DEFAULT_SETTINGS = {
+DEFAULT_SETTINGS: Dict[str, Any] = {
     "id": "singleton",
     "express_surcharge_usd": 50.0,
     "max_upload_mb": 8,
@@ -49,7 +50,7 @@ DEFAULT_SETTINGS = {
 }
 
 
-def _tpl(name, lang, subject, html):
+def _tpl(name: str, lang: str, subject: str, html: str) -> Dict[str, Any]:
     return {
         "id": f"{name}_{lang}",
         "template_name": name,
@@ -64,10 +65,10 @@ BASE_CSS = "font-family:Inter,Arial,sans-serif;color:#0A0A0A;line-height:1.6;"
 BOX = "border:1px solid #e5e7eb;border-radius:12px;padding:24px;max-width:560px;margin:24px auto;background:#fff;"
 BADGE = "display:inline-block;padding:4px 10px;border-radius:999px;background:#006B3F;color:#fff;font-weight:600;letter-spacing:1px;font-size:12px;"
 
-EMAIL_TEMPLATES_VERSION = 2  # bump to force re-seed of email_templates on next startup
+EMAIL_TEMPLATES_VERSION: int = 2  # bump to force re-seed of email_templates on next startup
 
 
-def _wrap(title, body_html):
+def _wrap(title: str, body_html: str) -> str:
     return f"""<div style="{BASE_CSS}background:#F8FAFC;padding:24px 0;">
   <div style="{BOX}">
     <div style="text-align:center;margin-bottom:16px;">
@@ -82,12 +83,12 @@ def _wrap(title, body_html):
 </div>"""
 
 
-def _badge(label):
+def _badge(label: str) -> str:
     """Return a Ghana-green badge HTML snippet without str.format (preserves {{placeholders}})."""
     return '<span style="' + BADGE + '">' + label + '</span>'
 
 
-DEFAULT_EMAIL_TEMPLATES = [
+DEFAULT_EMAIL_TEMPLATES: List[Dict[str, Any]] = [
     _tpl(
         "submitted", "en",
         "Your Ghana Visa Application {{tracking}} was received",

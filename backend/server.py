@@ -43,61 +43,78 @@ def now_iso():
 
 
 # ────────────────────────── STARTUP ──────────────────────────
-@app.on_event("startup")
-async def startup():
-    # Seed default admin
+async def _seed_default_admin() -> None:
     admin_email = os.environ.get("DEFAULT_ADMIN_EMAIL", "admin@eghanavisa.com")
     admin_pass = os.environ.get("DEFAULT_ADMIN_PASSWORD", "Admin@2026")
     existing = await db.admins.find_one({"email": admin_email}, {"_id": 0})
-    if not existing:
-        await db.admins.insert_one({
-            "id": str(uuid.uuid4()),
-            "email": admin_email,
-            "password_hash": hash_password(admin_pass),
-            "must_change_password": True,
-            "created_at": now_iso(),
-        })
-        logger.info(f"Seeded default admin: {admin_email}")
+    if existing:
+        return
+    await db.admins.insert_one({
+        "id": str(uuid.uuid4()),
+        "email": admin_email,
+        "password_hash": hash_password(admin_pass),
+        "must_change_password": True,
+        "created_at": now_iso(),
+    })
+    logger.info(f"Seeded default admin: {admin_email}")
 
-    # Seed settings
-    existing_settings = await db.settings.find_one({"id": "singleton"}, {"_id": 0})
-    if not existing_settings:
+
+def _patch_visa_type_fields(existing_settings: dict) -> tuple[list, bool]:
+    """Backfill missing per-visa fields without overwriting user changes."""
+    vt_list = existing_settings.get("visa_types", [])
+    changed = False
+    default_by_code = {d["code"]: d for d in DEFAULT_SETTINGS["visa_types"]}
+    for vt in vt_list:
+        default_vt = default_by_code.get(vt.get("code"))
+        if not default_vt:
+            continue
+        for field in ("express_available", "processing_time_label", "requires_presence"):
+            if field not in vt:
+                vt[field] = default_vt[field]
+                changed = True
+    return vt_list, changed
+
+
+async def _seed_or_migrate_settings() -> None:
+    existing = await db.settings.find_one({"id": "singleton"}, {"_id": 0})
+    if not existing:
         await db.settings.insert_one(dict(DEFAULT_SETTINGS))
         logger.info("Seeded default settings")
-    else:
-        # Additive migration: patch missing fields without overwriting user values
-        updates = {}
-        if "nowpayments" not in existing_settings:
-            updates["nowpayments"] = DEFAULT_SETTINGS["nowpayments"]
-        if "usdt_discount_pct" not in existing_settings:
-            updates["usdt_discount_pct"] = 0.0
-        vt_list = existing_settings.get("visa_types", [])
-        changed = False
-        for vt in vt_list:
-            for default_vt in DEFAULT_SETTINGS["visa_types"]:
-                if vt.get("code") == default_vt["code"]:
-                    for f in ("express_available", "processing_time_label", "requires_presence"):
-                        if f not in vt:
-                            vt[f] = default_vt[f]
-                            changed = True
-        if changed:
-            updates["visa_types"] = vt_list
-        if updates:
-            await db.settings.update_one({"id": "singleton"}, {"$set": updates})
-            logger.info(f"Patched settings with: {list(updates.keys())}")
+        return
+    updates: dict = {}
+    if "nowpayments" not in existing:
+        updates["nowpayments"] = DEFAULT_SETTINGS["nowpayments"]
+    if "usdt_discount_pct" not in existing:
+        updates["usdt_discount_pct"] = 0.0
+    vt_list, changed = _patch_visa_type_fields(existing)
+    if changed:
+        updates["visa_types"] = vt_list
+    if updates:
+        await db.settings.update_one({"id": "singleton"}, {"$set": updates})
+        logger.info(f"Patched settings with: {list(updates.keys())}")
 
-    # Seed email templates — versioned, force re-seed on version bump
-    tpl_version_doc = await db.template_versions.find_one({"id": "email_templates"}, {"_id": 0})
-    current_version = (tpl_version_doc or {}).get("version", 0)
-    if current_version < EMAIL_TEMPLATES_VERSION:
-        await db.email_templates.delete_many({})
-        await db.email_templates.insert_many([dict(t) for t in DEFAULT_EMAIL_TEMPLATES])
-        await db.template_versions.update_one(
-            {"id": "email_templates"},
-            {"$set": {"version": EMAIL_TEMPLATES_VERSION, "updated_at": now_iso()}},
-            upsert=True,
-        )
-        logger.info(f"Re-seeded email templates to version {EMAIL_TEMPLATES_VERSION}")
+
+async def _seed_email_templates_if_needed() -> None:
+    """Versioned re-seed: bump EMAIL_TEMPLATES_VERSION to force refresh."""
+    doc = await db.template_versions.find_one({"id": "email_templates"}, {"_id": 0})
+    current = (doc or {}).get("version", 0)
+    if current >= EMAIL_TEMPLATES_VERSION:
+        return
+    await db.email_templates.delete_many({})
+    await db.email_templates.insert_many([dict(t) for t in DEFAULT_EMAIL_TEMPLATES])
+    await db.template_versions.update_one(
+        {"id": "email_templates"},
+        {"$set": {"version": EMAIL_TEMPLATES_VERSION, "updated_at": now_iso()}},
+        upsert=True,
+    )
+    logger.info(f"Re-seeded email templates to version {EMAIL_TEMPLATES_VERSION}")
+
+
+@app.on_event("startup")
+async def startup() -> None:
+    await _seed_default_admin()
+    await _seed_or_migrate_settings()
+    await _seed_email_templates_if_needed()
 
 
 # ────────────────────────── HELPERS ──────────────────────────

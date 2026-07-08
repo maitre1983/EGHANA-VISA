@@ -47,6 +47,11 @@ export default function Apply() {
         api.get("/countries").then(({ data }) => setCountries(data));
     }, []);
 
+    const activeVisaTypes = useMemo(
+        () => (config?.visa_types || []).filter((v) => v.active),
+        [config]
+    );
+
     const selectedVisa = useMemo(
         () => (config?.visa_types || []).find((v) => v.code === form.visa_code),
         [config, form.visa_code]
@@ -109,7 +114,7 @@ export default function Apply() {
                         <div className="grid sm:grid-cols-2 gap-4">
                             <Field label="Visa type">
                                 <select data-testid="apply-visa" value={form.visa_code} onChange={(e) => set("visa_code", e.target.value)} className={selectInput}>
-                                    {(config?.visa_types || []).filter((v) => v.active).map((v) => (
+                                    {activeVisaTypes.map((v) => (
                                         <option key={v.code} value={v.code}>{v.name_en} — ${v.price_usd}</option>
                                     ))}
                                 </select>

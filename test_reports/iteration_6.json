@@ -1,0 +1,48 @@
+{
+  "summary": "Iteration 6 code-quality remediation regression: backend 26/26 pytest passed (17 iteration-5 regression + 9 iteration-6 verification), frontend 11/11 UI checks passed. Confirmed (a) startup() decomposition (_seed_default_admin / _seed_or_migrate_settings / _seed_email_templates_if_needed) leaves DB state identical: /api/config still exposes 3 visa types with all required fields, admin login with rotated password Admin@2026New! still works, all 6 email templates persisted with double-brace placeholders and NO single-brace leakage; (b) countries.py has explicit list[str] return annotations on passport_countries() and travel_from_countries(); /api/countries returns 16-country ECOWAS-filtered passport list, Ghana excluded; (c) seed_data.py type-annotated constants are Mongo/JSON safe, EMAIL_TEMPLATES_VERSION=2 int; (d) Full USDT sandbox E2E works (create app → crypto/initiate → simulate-finish → /track paid); (e) Ama chat returns a real Claude reply; (f) Frontend memoized activeVisaTypes correctly shows only active visa types in the Apply dropdown, summary panel updates immediately when switching Regular→Express (base $350 + surcharge $50 = $400 total); (g) log.js dev-guarded logger loads without runtime errors on Apply.jsx / Payment.jsx / AmaChat.jsx (no undefined `log` errors, no console.warn strings survived in Payment/AmaChat source). No new backend errors, no new compile errors.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Apply page (visa dropdown)", "issues": ["Pre-existing React hydration warning: '<span> cannot be a child of <option>'. Source appears to be an <option> whose text content is rendered by React in a way that creates a stray <span> during hydration (likely the ' — $price' segment). Non-blocking; page still functions. Recommend inspecting Apply.jsx line 118 and children of <select> to ensure only text nodes are inside <option>."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration5.py",
+    "/app/backend/tests/test_iteration6.py",
+    "/app/test_reports/pytest/iteration_6_new_results.xml"
+  ],
+  "action_items": [
+    "Optional (design nit, non-blocking): trace the '<span> cannot be a child of <option>' hydration warning on /apply. Not caused by iteration-6 memoization change (existed before) but worth cleaning up.",
+    "Optional refactor already noted in iter-5: server.py is 989 lines — consider extracting routers/admin.py, routers/payments.py, routers/applications.py."
+  ],
+  "critical_code_review_comments": [
+    "server.py: startup decomposition is clean — 3 focused helpers each with a single responsibility, cyclomatic complexity dropped from ~15 to <5 each. `_patch_visa_type_fields` extracted correctly and returns (list, bool) tuple which is idiomatic. Nit: `_patch_visa_type_fields` mutates the input `existing_settings['visa_types']` in-place and then returns it; consider deep-copying if callers ever share the dict — currently safe because caller reads and writes DB.",
+    "seed_data.py: EMAIL_TEMPLATES_VERSION annotated as `int` and the migration in `_seed_email_templates_if_needed` correctly uses `int` comparison. Good. Consider adding a fail-fast import-time assertion that scans DEFAULT_EMAIL_TEMPLATES for stray single-brace `{name}`/`{tracking}` (using the regex I used in test_iteration6.py) — this would permanently prevent the class of regression that hit iteration 4.",
+    "countries.py: functions now return `list[str]` (PEP 585). Note that `ECOWAS_COUNTRIES` is `Set[str]` and `ALL_COUNTRIES` is `List[str]` (using typing.List / typing.Set) — mixed style with the newer PEP 585 return type. Minor inconsistency; not a bug.",
+    "frontend/src/lib/log.js: production build check via `process.env.NODE_ENV !== 'production'` is standard CRA pattern; will be tree-shaken to no-op in prod builds. Good. Consider adding `debug` and adding a `namespace` prefix so devs can filter — future iteration.",
+    "Apply.jsx: `useMemo` correctly depends on `config` (not config?.visa_types) — since setConfig triggers a new object reference, this recomputes exactly on config changes. Good. Same for `selectedVisa` memo. No performance issues.",
+    "Payment.jsx / AmaChat.jsx: `log.warn(...)` swaps are clean and non-blocking. No `console.warn` left in these two files. Note that other files (App.jsx, api.js, ApiErrorBoundary.jsx if any) may still call raw console — a future sweep with grep can catch them.",
+    "test_iteration6.py: added regex-based double-brace check that correctly matches `{token}` NOT preceded/followed by another brace — this is the correct way to detect single-brace leakage without false positives (my initial simple substring check failed because `{name}` naturally appears inside `{{name}}`)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration6.py",
+    "/app/test_reports/iteration_6.json",
+    "/app/test_reports/pytest/iteration_6_new_results.xml",
+    "/app/test_reports/pytest/iteration_6_results.xml"
+  ],
+  "success_rate": {
+    "backend": "100% (26/26 across iteration_5.py + iteration_6.py)",
+    "frontend": "100% (11/11 UI checks: home load, apply dropdown memoization, summary reactivity, Ama chat send+reply, admin login, admin dashboard, settings tabs, track page)"
+  },
+  "test_credentials": "Admin: admin@eghanavisa.com / Admin@2026New! (working)",
+  "seed_data_creation": "Created 1 TEST application during E2E flow via iteration_6 test (email=TEST_iter6@example.com, tracking=GH-2026-XXXXXX). Left in status='submitted' + payment_status='paid' (via USDT sandbox simulate-finish). usdt_trc20 confirmed ACTIVE; usdt_discount_pct=10 as per note.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration-6 is pure code-quality cleanup (startup decomposition, useMemo on Apply.jsx, log.js dev-only logger, type hints on countries.py + seed_data.py). Zero user-facing behavior changed. All iteration-5 regression tests still pass (17/17). New iteration-6 verification suite is at /app/backend/tests/test_iteration6.py (9 tests, ~5s runtime) covering type-annotation shape checks, /api/countries ECOWAS-filter invariant, startup helpers idempotency (via public API observation), and full USDT-sandbox E2E. The two comprehensive test files (test_iteration5.py + test_iteration6.py) form the recommended regression suite for future iterations. Emergent 'Made with Emergent' badge intercepts pointer events at bottom-right; when writing Playwright scripts, hide it first: `page.evaluate(\"const b=document.getElementById('emergent-badge'); if(b) b.style.display='none';\")`.",
+  "rca of the issue": "N/A — iteration-6 is remediation, not a bug fix. All targeted refactors verified working."
+}

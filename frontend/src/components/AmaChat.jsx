@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { MessageCircle, X, Send } from "lucide-react";
 import api from "../lib/api";
+import { log } from "../lib/log";
 
 export default function AmaChat() {
     const [open, setOpen] = useState(false);
@@ -28,7 +29,7 @@ export default function AmaChat() {
             setSessionId(data.session_id);
             setMessages((m) => [...m, { id: `a-${Date.now()}`, role: "ai", text: data.reply }]);
         } catch (err) {
-            console.warn("Ama chat error:", err?.message || err);
+            log.warn("Ama chat error:", err?.message || err);
             setMessages((m) => [...m, { id: `err-${Date.now()}`, role: "ai", text: "Sorry, I'm having trouble reaching my brain. Please try again." }]);
         } finally {
             setBusy(false);

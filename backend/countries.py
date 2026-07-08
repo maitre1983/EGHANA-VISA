@@ -1,7 +1,8 @@
 """Country lists for the Ghana Visa Portal."""
+from typing import Set, List
 
 # 16 ECOWAS/West African nations excluded from Passport Country selection
-ECOWAS_COUNTRIES = {
+ECOWAS_COUNTRIES: Set[str] = {
     "Benin", "Burkina Faso", "Cabo Verde", "Cote d'Ivoire",
     "Gambia", "Ghana", "Guinea", "Guinea-Bissau", "Liberia",
     "Mali", "Mauritania", "Niger", "Nigeria", "Senegal",
@@ -9,7 +10,7 @@ ECOWAS_COUNTRIES = {
 }
 
 # All world countries (ISO short names)
-ALL_COUNTRIES = [
+ALL_COUNTRIES: List[str] = [
     "Afghanistan", "Albania", "Algeria", "Andorra", "Angola",
     "Antigua and Barbuda", "Argentina", "Armenia", "Australia", "Austria",
     "Azerbaijan", "Bahamas", "Bahrain", "Bangladesh", "Barbados", "Belarus",
@@ -51,8 +52,8 @@ ALL_COUNTRIES = [
     "Yemen", "Zambia", "Zimbabwe",
 ]
 
-def passport_countries():
+def passport_countries() -> list[str]:
     return [c for c in ALL_COUNTRIES if c not in ECOWAS_COUNTRIES]
 
-def travel_from_countries():
+def travel_from_countries() -> list[str]:
     return list(ALL_COUNTRIES)
