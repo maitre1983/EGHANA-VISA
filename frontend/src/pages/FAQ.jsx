@@ -22,7 +22,7 @@ export default function FAQ() {
             <div className="mt-10">
                 <Accordion type="single" collapsible className="space-y-3">
                     {FAQS.map((f, i) => (
-                        <AccordionItem key={i} value={`item-${i}`} className="bg-white border border-black/10 rounded-xl px-5 data-[state=open]:border-ghana-green" data-testid={`faq-item-${i}`}>
+                        <AccordionItem key={f.q} value={`item-${i}`} className="bg-white border border-black/10 rounded-xl px-5 data-[state=open]:border-ghana-green" data-testid={`faq-item-${i}`}>
                             <AccordionTrigger className="font-heading text-left font-semibold hover:no-underline py-5">{f.q}</AccordionTrigger>
                             <AccordionContent className="text-slate-700 leading-relaxed pb-5">{f.a}</AccordionContent>
                         </AccordionItem>

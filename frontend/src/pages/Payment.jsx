@@ -13,7 +13,11 @@ export default function Payment() {
     const [crypto, setCrypto] = useState(null); // active USDT payment state
     const pollRef = useRef(null);
 
+    // Fetch site config once on mount — no deps intentionally
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(() => { api.get("/config").then(({ data }) => setConfig(data)); }, []);
+    // Cleanup poll interval on unmount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
     const startPayment = async () => {
@@ -54,7 +58,9 @@ export default function Payment() {
                         clearInterval(pollRef.current);
                         toast.error("Payment failed or expired");
                     }
-                } catch (e) { /* keep polling */ }
+                } catch (err) {
+                    console.warn("Crypto status poll failed (will retry):", err?.message || err);
+                }
             }, 15000);
         } catch (e) {
             toast.error(e?.response?.data?.detail || "Crypto payment initiation failed");

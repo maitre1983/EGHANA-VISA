@@ -5,7 +5,7 @@ import api from "../lib/api";
 export default function AmaChat() {
     const [open, setOpen] = useState(false);
     const [messages, setMessages] = useState([
-        { role: "ai", text: "Akwaaba! I'm Ama, your Ghana Visa assistant. Ask me about prices, processing times, required documents or tracking." },
+        { id: "welcome", role: "ai", text: "Akwaaba! I'm Ama, your Ghana Visa assistant. Ask me about prices, processing times, required documents or tracking." },
     ]);
     const [input, setInput] = useState("");
     const [busy, setBusy] = useState(false);
@@ -19,15 +19,17 @@ export default function AmaChat() {
     const send = async () => {
         const msg = input.trim();
         if (!msg || busy) return;
-        setMessages((m) => [...m, { role: "user", text: msg }]);
+        const userId = `u-${Date.now()}`;
+        setMessages((m) => [...m, { id: userId, role: "user", text: msg }]);
         setInput("");
         setBusy(true);
         try {
             const { data } = await api.post("/chat", { message: msg, session_id: sessionId });
             setSessionId(data.session_id);
-            setMessages((m) => [...m, { role: "ai", text: data.reply }]);
-        } catch {
-            setMessages((m) => [...m, { role: "ai", text: "Sorry, I'm having trouble reaching my brain. Please try again." }]);
+            setMessages((m) => [...m, { id: `a-${Date.now()}`, role: "ai", text: data.reply }]);
+        } catch (err) {
+            console.warn("Ama chat error:", err?.message || err);
+            setMessages((m) => [...m, { id: `err-${Date.now()}`, role: "ai", text: "Sorry, I'm having trouble reaching my brain. Please try again." }]);
         } finally {
             setBusy(false);
         }
@@ -58,8 +60,8 @@ export default function AmaChat() {
                         </div>
                     </div>
                     <div ref={listRef} className="flex-1 overflow-y-auto p-3 space-y-2 bg-slate-50">
-                        {messages.map((m, i) => (
-                            <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                        {messages.map((m) => (
+                            <div key={m.id} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
                                 <div
                                     className={`max-w-[80%] text-sm px-3 py-2 rounded-lg ${
                                         m.role === "user"

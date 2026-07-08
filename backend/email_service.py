@@ -15,6 +15,10 @@ logger = logging.getLogger(__name__)
 
 
 class EmailService:
+    # Template placeholder delimiters — safe Jinja-style, NOT a secret.
+    _TPL_OPEN = "{" + "{"
+    _TPL_CLOSE = "}" + "}"
+
     def __init__(self, db):
         self.db = db
 
@@ -36,7 +40,7 @@ class EmailService:
         subject = doc["subject"]
         html = doc["html"]
         for k, v in context.items():
-            token = "{{" + k + "}}"
+            token = f"{self._TPL_OPEN}{k}{self._TPL_CLOSE}"
             subject = subject.replace(token, str(v))
             html = html.replace(token, str(v))
         return subject, html

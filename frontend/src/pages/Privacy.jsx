@@ -19,7 +19,7 @@ export default function Privacy() {
             <p className="mt-3 text-slate-600">GDPR + Ghana Data Protection Act 2012 compliant.</p>
             <div className="mt-10 space-y-6 bg-white rounded-xl border border-black/10 p-8 shadow-sm">
                 {SECTIONS.map(([t, b], i) => (
-                    <div key={i}>
+                    <div key={`privacy-${t}`}>
                         <h2 className="font-heading text-xl font-semibold">{i + 1}. {t}</h2>
                         <p className="mt-2 text-slate-700 leading-relaxed">{b}</p>
                     </div>

@@ -1,0 +1,53 @@
+{
+  "summary": "Iteration 4 code-quality remediation regression testing. Found ONE CRITICAL REGRESSION introduced by the email_service.py _TPL_OPEN/_TPL_CLOSE refactor: the delimiter was silently changed from single-brace {name} to double-brace {{name}}, but the seeded email templates for 'in_progress' and 'done' still use single-brace placeholders. Result: `{name}` and `{tracking}` placeholders are NOT substituted in status-change emails — they will reach users as literal strings like 'Dear {name}, your application {tracking}...'. All other regression checks passed: Home theme+sections, FAQ (8 items, expand), Terms (8 sections), Privacy (8 sections), Ama chat backend endpoint, admin login (JWT with Admin@2026New!), admin dashboard, all 6 admin settings tabs, admin analytics, USDT sandbox simulation end-to-end. Payment.jsx console.warn on polling catch verified in source. AmaChat.jsx stable-id keys verified in source.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "email_service.py::EmailService.render_template",
+        "issue": "REGRESSION from iteration-4 refactor: _TPL_OPEN='{{' and _TPL_CLOSE='}}' but seeded 'in_progress' and 'done' templates (both en+fr) have single-brace {name} and {tracking} placeholders (introduced via the _wrap().format(BADGE) call in seed_data.py which double-brace-escapes them to single-brace in the final string). Consequence: single-brace placeholders are NEVER substituted → users receive emails with literal 'Dear {name}' and '{tracking}' strings. Verified via unit test AND direct render_template() call. See test failure: TestEmailTemplateSubstitution::test_render_substitutes_all_placeholders — 'Unsubstituted placeholders remain: [(in_progress, [{name},{tracking}]), (done, [{name},{tracking}])]'.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "db.email_templates for 'submitted/en'",
+        "issue": "Template subject is literally 'TEST subject {{tracking}}' and body is '<p>TEST body {{name}}</p>' — clearly polluted test data from an earlier iteration. Seed function is guarded by 'count_documents==0' so it never re-seeds. Consider forcing re-seed for templates or exposing an admin-reset endpoint."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration4.py",
+    "/app/test_reports/pytest/iteration_4_results.xml"
+  ],
+  "action_items": [
+    "FIX (HIGH): Either (a) change _TPL_OPEN/_TPL_CLOSE back to single-brace ('{' / '}') and re-seed 'submitted' templates so they too use single-brace, OR (b) update seed_data.py so in_progress/done templates output double-brace {{name}}/{{tracking}} in the final .format() output (i.e., use {{{{name}}}} in the source) AND force a re-seed of DB. Recommend option (a) for minimal blast radius — just revert the delimiter constants to single-brace. Note: the review request itself says '{name}, {tracking}' (single-brace) is what's expected to work.",
+    "Optional: reset 'TEST subject' pollution in db.email_templates.submitted/en (probably left over from a prior send-test)."
+  ],
+  "critical_code_review_comments": [
+    "email_service.py:19-20 — Using string-concat trick `'{' + '{'` to produce '{{' to fool a static code scanner is fragile. If the intent is Jinja-style double-brace, name the constants clearly (e.g., JINJA_OPEN) and document. Better yet, use `string.Template` or f-string safe substitution instead of naive replace().",
+    "seed_data.py — Mixing Python str.format() (which requires {{}} to emit literal {) with runtime template substitution using the same delimiter is a footgun. Two templates use raw literals ('submitted'), four use .format() (in_progress/done, en/fr). This is exactly what caused the regression.",
+    "server.py:90-91 — Idempotency guard `count_documents()==0` means fixes to seed_data.py never propagate to existing installs. Consider a versioned migration or per-template upsert on startup.",
+    "Payment.jsx:17-21 — The two 'eslint-disable-next-line react-hooks/exhaustive-deps' with intent comments are correct for the mount-only useEffects. Well-annotated.",
+    "AmaChat.jsx — Stable id generation using `Date.now()` is fine for chat, but not fully collision-safe if two messages are dispatched within the same ms (unlikely for chat). If ever batched, use crypto.randomUUID() or an incrementing counter.",
+    "server.py file is 964 lines — approaching the 700-line threshold. Consider splitting admin, payment, and application routers into separate modules.",
+    "Payment.jsx polling catch now logs — good, silent-failure removed."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration4.py"
+  ],
+  "success_rate": {
+    "backend": "71% (5/7 in iteration-4 suite; the 2 failures are: (1) the email-substitution REGRESSION which is the reported bug, (2) test_track_application which fails because pytest.tracking_no doesn't propagate between xdist workers — a test infra minor issue, not a product bug)",
+    "frontend": "95% (all reachable pages/flows work; Ama widget click on Home is intercepted by the Emergent 'Made with' badge overlay in the Playwright viewport — this is an emergent-preview artifact, not a product bug; chat backend endpoint verified working)"
+  },
+  "test_credentials": "Admin: admin@eghanavisa.com / Admin@2026New! (working; iteration-3 credential still valid).",
+  "seed_data_creation": "Created 2 TEST_ applications during backend suite (test.john@example.com tourist_30, test.usdt@example.com tourist_30 with paid USDT simulation). db.crypto_payments has 1 new NP-SIM-* finished record. USDT trc20 toggle was re-activated by TestUsdtSimulation (currently ACTIVE).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "The critical regression is in /app/backend/email_service.py lines 19-20 (_TPL_OPEN/_TPL_CLOSE). To reproduce: run test_iteration4.py::TestEmailTemplateSubstitution — it will fail with 'Unsubstituted placeholders remain'. Root cause: the iteration-4 delimiter refactor changed the substitution token from '{name}' to '{{name}}'. But seed_data.py's DEFAULT_EMAIL_TEMPLATES uses Python's str.format(BADGE) on the in_progress/done templates, which converts source-code {{name}} → runtime {name}. So four of the six seeded templates now have single-brace placeholders that the new delimiter can't match. Fix path: revert _TPL_OPEN/_TPL_CLOSE to '{' and '}' AND fix the 'submitted' templates to also use single-brace (or force a DB re-seed with a versioned migration). The USDT trc20 payment method was re-activated during this run; toggle it back to inactive if needed for a clean state.",
+  "rca of the issue": "ROOT CAUSE: Iteration-4 code-quality refactor at /app/backend/email_service.py lines 19-20 introduced _TPL_OPEN='{{' and _TPL_CLOSE='}}' to appease a code scanner that flagged the original '{'+k+'}' (single-brace) as a hardcoded secret. The scanner alert was a FALSE POSITIVE (this is a template delimiter, not a secret). The refactor was supposed to be a cosmetic change, but it accidentally changed the delimiter shape from single-brace to double-brace. Meanwhile, four of six seeded templates in /app/backend/seed_data.py (in_progress/en, in_progress/fr, done/en, done/fr) use `_wrap(...).format(BADGE)` — and Python's str.format() escapes double-brace {{name}} → single-brace {name} in the output. So those templates end up with single-brace placeholders in the DB. Old code (`'{'+k+'}'`) matched those; new code (`'{{'+k+'}}'`) does not. REPRODUCTION: (1) POST /api/applications with valid data → application created; (2) admin sets status to 'in_progress' → triggers send_email('in_progress', {'name': 'Alice', 'tracking': 'GH-2026-XXX'}); (3) check db.email_log — the html field will contain 'Dear {name},' and 'application {tracking}' as literals. MITIGATION (recommended): revert _TPL_OPEN='{' and _TPL_CLOSE='}' — a one-line fix. Optionally: also fix the 'submitted' template inserts (they are the only two that don't use .format(), so their {{name}} is still literally {{name}} in the DB) by either (a) removing one brace or (b) forcing a DB re-seed. Do NOT try to solve the code-scanner false positive by changing the delimiter shape — instead, add a `# noqa: hardcoded-secret` or `# nosec` comment on the original line."
+}

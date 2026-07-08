@@ -19,7 +19,7 @@ export default function Terms() {
             <p className="mt-3 text-slate-600">Please read carefully before submitting an application.</p>
             <div className="mt-10 space-y-6 bg-white rounded-xl border border-black/10 p-8 shadow-sm">
                 {TERMS.map(([title, body], i) => (
-                    <div key={i}>
+                    <div key={`terms-${title}`}>
                         <h2 className="font-heading text-xl font-semibold">{i + 1}. {title}</h2>
                         <p className="mt-2 text-slate-700 leading-relaxed">{body}</p>
                     </div>
