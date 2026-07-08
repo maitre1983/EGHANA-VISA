@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 9 admin credentials reset VERIFIED. All 11/11 backend regression tests passed. POST /api/admin/login with the documented default admin@eghanavisa.com / Admin@2026 now returns HTTP 200 with a valid JWT (3-part signed token), email echoed, must_change_password=false. Wrong password returns 401 'Invalid credentials'. The old rotated password Admin@2026New! is now REJECTED (401) confirming the hash was truly reset. JWT unlocks all authenticated admin endpoints: GET /api/admin/kpis (200), GET /api/admin/settings (200), GET /api/admin/applications (200 — returns list of 21 apps). Unauthenticated & invalid-token requests correctly rejected with 401/403. Public surface intact: /api/config returns full payload. Login idempotency check (3 consecutive logins) confirms exactly one admin document for admin@eghanavisa.com — no duplicates created by the reset script. Password NOT rotated during tests — user's credentials remain Admin@2026 exactly as the request required.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration9.py",
+    "/app/test_reports/pytest/iteration_9_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Password reset was applied out-of-band via a one-shot bcrypt script directly against MongoDB — there is no code-level guardrail preventing a future testing agent from rotating the default password again. Consider (a) a startup seeder that re-asserts admin.password_hash = bcrypt(DEFAULT_ADMIN_PASSWORD) when an env flag ADMIN_RESET_ON_BOOT=true is set, or (b) documenting in a docstring on /api/admin/credentials that automated tests MUST restore the default password in teardown. The recurring rotation issue across iterations 1→8 is a process gap, not a code bug.",
+    "server.py /api/admin/login still returns 401 with a generic 'Invalid credentials' body — good for security (no username-enumeration). Verified consistent across wrong-password and rotated-password rejection paths.",
+    "server.py remains 1000+ lines; iteration-5→8 recommendation to split into routers/ still stands (out of scope for this credentials-only fix)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration9.py",
+    "/app/test_reports/iteration_9.json",
+    "/app/test_reports/pytest/iteration_9_results.xml",
+    "/app/memory/test_credentials.md (verified marker only — password value unchanged at Admin@2026)"
+  ],
+  "success_rate": {
+    "backend": "100% (11/11 iteration_9 pytest)",
+    "frontend": "N/A — testing scope was backend only per request"
+  },
+  "test_credentials": "Admin: admin@eghanavisa.com / Admin@2026 (verified working on preview, must_change_password=false, straight-to-dashboard login).",
+  "seed_data_creation": "None. No test data created; only 3 idempotent login calls + 3 read-only admin GETs performed. Existing 21 applications untouched. No password rotation performed. No emails sent.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "CRITICAL: DO NOT rotate the admin password. The documented default is admin@eghanavisa.com / Admin@2026 (Admin, capital A, lowercase dmin, @, 2026, NO trailing !). Iterations 1→8 rotated it to Admin@2026New! which blocked the user; iteration 9 reset it back via direct bcrypt update to admins.password_hash and cleared must_change_password. If any future test needs to exercise POST /api/admin/credentials (change-password endpoint), it MUST restore Admin@2026 in a pytest teardown/finalizer before finishing — otherwise the user will be locked out again. The reset was scoped to the preview MongoDB only; production https://ghana-voa-platform.emergent.host has its own DB and would need a separate reset. Preview URL: https://ghana-voa-platform.preview.emergentagent.com. Regression file: /app/backend/tests/test_iteration9.py — reuse as a quick smoke test on any future iteration to detect password drift immediately.",
+  "rca of the issue": "Root cause: /api/admin/credentials was invoked by the iteration-1 testing agent to exercise the change-password flow and left the password rotated to Admin@2026New!. Subsequent iterations (2→8) reused the rotated value and updated /app/memory/test_credentials.md accordingly, so the user's documented default Admin@2026 no longer matched the stored bcrypt hash — user got 401 on login. Fix (applied by main agent before this iteration): one-shot script updated admins.password_hash = bcrypt('Admin@2026', 12 rounds) and set must_change_password=false for the single admin@eghanavisa.com document. Verification (this iteration): 11 pytest cases — login with Admin@2026 succeeds (200 + JWT + must_change_password=false), login with old rotated Admin@2026New! now fails (401), login with 'wrong' fails (401), JWT unlocks kpis/settings/applications (all 200), unauth requests rejected (401/403), 3 back-to-back logins return same admin email (no duplicate doc), /api/config still 200. Mitigation for recurrence: see critical_code_review_comments[0] — either add a boot-time re-seeder gated on an env flag, or add a pytest fixture teardown that always restores the default password if any test touches /api/admin/credentials."
+}
