@@ -42,6 +42,23 @@ def now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
+async def _notify_admin(template_name: str, context: dict) -> None:
+    """Fire-and-forget internal ops email. Never breaks the caller if email fails."""
+    try:
+        s = await get_settings()
+        recipient = (s.get("admin_notification_email") or "").strip()
+        if not recipient:
+            return
+        await email_svc.send(
+            recipient=recipient,
+            template_name=template_name,
+            lang="en",
+            context=context,
+        )
+    except Exception as e:
+        logger.warning(f"Admin notification failed ({template_name}): {e}")
+
+
 # ────────────────────────── STARTUP ──────────────────────────
 async def _seed_default_admin() -> None:
     admin_email = os.environ.get("DEFAULT_ADMIN_EMAIL", "admin@eghanavisa.com")
@@ -99,6 +116,8 @@ async def _seed_or_migrate_settings() -> None:
         updates["usdt_discount_pct"] = 0.0
     if "priority_surcharge_usd" not in existing:
         updates["priority_surcharge_usd"] = DEFAULT_SETTINGS["priority_surcharge_usd"]
+    if "admin_notification_email" not in existing:
+        updates["admin_notification_email"] = DEFAULT_SETTINGS["admin_notification_email"]
 
     # Migrate visa types: remove obsolete + add missing new ones
     vt_list = existing.get("visa_types", [])
@@ -274,6 +293,21 @@ async def create_application(payload: ApplicationIn):
     }
     await db.applications.insert_one(dict(doc))
     doc.pop("_id", None)
+
+    # Fire admin notification email — new submission
+    proc_label_map = {"express": "Express", "priority": "Priority", "regular": "Regular"}
+    await _notify_admin("admin_new_submission", {
+        "tracking": doc["tracking_no"],
+        "name": doc["full_name"],
+        "email": doc["email"],
+        "phone": doc["phone"],
+        "passport_country": doc["passport_country"],
+        "visa_type": doc["visa_name"],
+        "processing": proc_label_map.get(doc["processing"], doc["processing"].title()),
+        "amount": f"{doc['amount_usd']:.2f}",
+        "arrival_date": doc["arrival_date"],
+        "submitted_at": doc["created_at"],
+    })
     return doc
 
 
@@ -391,6 +425,17 @@ async def payment_confirm(payload: PayConfirm):
             "amount": f"{app_doc['amount_usd']:.2f}",
         },
     )
+    # Admin notification — payment success (Hubtel/Visa card)
+    await _notify_admin("admin_payment_success", {
+        "tracking": app_doc["tracking_no"],
+        "name": app_doc["full_name"],
+        "email": app_doc["email"],
+        "visa_type": app_doc["visa_name"],
+        "processing": processing_label,
+        "amount": f"{app_doc['amount_usd']:.2f}",
+        "payment_method": "Visa card (Hubtel)",
+        "paid_at": now_iso(),
+    })
     return {"ok": True, "tracking_no": payload.tracking_no}
 
 
@@ -636,6 +681,23 @@ async def admin_update_whatsapp(payload: WhatsAppIn, ctx: dict = Depends(require
         {"$set": {"whatsapp_admin": payload.whatsapp_admin, "updated_at": now_iso()}},
     )
     return {"ok": True}
+
+
+class AdminNotificationEmailIn(BaseModel):
+    admin_notification_email: str = ""
+
+
+@api.post("/admin/settings/admin-notification-email")
+async def admin_update_notification_email(payload: AdminNotificationEmailIn, ctx: dict = Depends(require_admin)):
+    email = (payload.admin_notification_email or "").strip()
+    # Basic validation — allow empty (to disable notifications) or a plausible email
+    if email and "@" not in email:
+        raise HTTPException(status_code=400, detail="Invalid email address")
+    await db.settings.update_one(
+        {"id": "singleton"},
+        {"$set": {"admin_notification_email": email, "updated_at": now_iso()}},
+    )
+    return {"ok": True, "admin_notification_email": email}
 
 
 class AIModelIn(BaseModel):
@@ -992,6 +1054,17 @@ async def _apply_crypto_status_update(payment_id: str, np_status: str, payload: 
                     "amount": f"{app_doc['amount_usd']:.2f}",
                 },
             )
+            # Admin notification — payment success (USDT crypto)
+            await _notify_admin("admin_payment_success", {
+                "tracking": app_doc["tracking_no"],
+                "name": app_doc["full_name"],
+                "email": app_doc["email"],
+                "visa_type": app_doc["visa_name"],
+                "processing": processing_label,
+                "amount": f"{app_doc['amount_usd']:.2f}",
+                "payment_method": f"USDT {doc['network'].upper()} (NowPayments)",
+                "paid_at": now_iso(),
+            })
 
 
 @app.post("/api/webhooks/nowpayments")

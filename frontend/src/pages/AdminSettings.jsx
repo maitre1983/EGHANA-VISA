@@ -56,6 +56,15 @@ export default function AdminSettings() {
     };
     const saveWhatsapp = async (v) => { await api.post("/admin/settings/whatsapp", { whatsapp_admin: v }); toast.success("Saved"); reload(); };
     const saveAI = async (v) => { await api.post("/admin/settings/ai-model", { ai_model: v }); toast.success("Saved"); reload(); };
+    const saveAdminEmail = async (v) => {
+        try {
+            await api.post("/admin/settings/admin-notification-email", { admin_notification_email: v });
+            toast.success("Admin notification email saved");
+            reload();
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || "Save failed");
+        }
+    };
     const saveUpload = async (v) => { await api.post("/admin/settings/upload-limit", { max_upload_mb: parseInt(v, 10) }); toast.success("Saved"); reload(); };
 
     return (
@@ -103,11 +112,20 @@ export default function AdminSettings() {
                 {tab === "nowpayments" && <NowPaymentsForm initial={s.nowpayments || {}} onSave={saveNowpayments} onTest={testNowpayments} discountPct={s.usdt_discount_pct || 0} onSaveDiscount={async (pct) => { await api.post("/admin/settings/usdt-discount", { pct }); toast.success("Discount saved"); reload(); }} />}
                 {tab === "other" && (
                     <>
-                        <Card title="WhatsApp support number (used by Ama)">
+                        <Card title="WhatsApp support number (used by Abena)">
                             <TextRow initial={s.whatsapp_admin} onSave={saveWhatsapp} testid="whatsapp" placeholder="+233..." />
                         </Card>
-                        <Card title="AI model for Ama chat">
+                        <Card title="AI model for Abena chat">
                             <SelectRow initial={s.ai_model} options={AI_MODELS} onSave={saveAI} testid="ai-model" />
+                        </Card>
+                        <Card title="Admin notification email (new applications & payments)">
+                            <TextRow
+                                initial={s.admin_notification_email || ""}
+                                onSave={saveAdminEmail}
+                                testid="admin-notification-email"
+                                placeholder="ops@example.com (leave empty to disable)"
+                            />
+                            <div className="text-xs text-slate-500 mt-2">Sent when a new application is submitted AND when its payment succeeds. Leave empty to disable internal notifications.</div>
                         </Card>
                     </>
                 )}

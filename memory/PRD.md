@@ -7,7 +7,7 @@ Build a full-stack Ghana Visa On Arrival web application for **eghanavisa.com** 
 - Hubtel Visa card payment (Visa only at launch, USDT crypto prepared but disabled)
 - Application tracking (`Submitted → In Progress → Done`), each transition sends email
 - Admin dashboard "command center" with KPIs, filtered table, actions, settings and analytics
-- Floating AI chat assistant "Ama"
+- Floating AI chat assistant "Abena"
 - Legal (Terms + Privacy), FAQ (8 Qs), departure-date compliance warning
 - Blurred Ghana Visa sample preview card
 - Full SEO (title, meta, OG, Schema.org, sitemap, robots)
@@ -18,7 +18,7 @@ Build a full-stack Ghana Visa On Arrival web application for **eghanavisa.com** 
 - **Storage**: Emergent Object Storage (behind abstract `StorageService`, future-ready for R2/S3)
 - **Email**: Resend (real when `RESEND_API_KEY` set — simulation-log fallback otherwise, previewable in admin)
 - **Payments**: Hubtel Online Checkout with **SANDBOX** simulation mode until keys are added in `/admin/settings`. Optional outbound static-IP proxy (Fixie-style) supported via `outbound_proxy_url`.
-- **AI chat**: Claude Sonnet 4.5 via `emergentintegrations` + Emergent Universal Key; **model is configurable in `/admin/settings`**.
+- **AI chat**: Claude Sonnet 4.5 via `emergentintegrations` + Emergent Universal Key; **model is configurable in `/admin/settings`**. Assistant name: **Abena**.
 - **Colors**: Ghana flag (#CE1126 red / #FCD116 gold / #006B3F green / #0A0A0A black)
 - **Fonts**: Inter (body) + Outfit (headings / numbers)
 
@@ -34,7 +34,15 @@ Build a full-stack Ghana Visa On Arrival web application for **eghanavisa.com** 
 - ✅ File uploads validated server-side (JPEG/PNG/PDF, configurable max MB)
 - ✅ SEO: title/meta/OG/Twitter/Schema.org GovernmentService + FAQPage, sitemap.xml, robots.txt
 - ✅ Backend tested 100% (38/38 pytest cases pass serially)
-- ✅ Frontend end-to-end validated (Home → Apply → Sandbox pay → Track → Admin transitions → Ama chat)
+- ✅ Frontend end-to-end validated (Home → Apply → Sandbox pay → Track → Admin transitions → Abena chat)
+
+## Iteration 12 (2026-02-08) — Admin notifications + Abena rebrand
+- ✅ Internal ops email fired to `admin_notification_email` on: (a) new submission — template `admin_new_submission`; (b) payment success (Hubtel + USDT crypto) — template `admin_payment_success`.
+- ✅ New admin setting `admin_notification_email` (default `mirtoken2022@gmail.com`), editable in `/admin/settings → WhatsApp & AI` tab (leave empty to disable).
+- ✅ New endpoint `POST /api/admin/settings/admin-notification-email`.
+- ✅ AI assistant renamed globally from **Ama** → **Abena** (frontend component `AbenaChat.jsx`, backend system prompt, all UI copy, admin settings labels).
+- ✅ Email templates re-seeded (`EMAIL_TEMPLATES_VERSION = 3`) — adds the two new admin templates without touching existing user-facing ones.
+- ✅ Verified end-to-end via curl: submission + payment produced both admin emails (Resend `simulated=false`), and Abena introduces herself correctly.
 
 ## User personas
 1. **Traveller** (any nationality except 16 ECOWAS) — fills form, uploads docs, pays by Visa, tracks status, receives visa by email.

@@ -89,7 +89,7 @@ export default function Home() {
                         { icon: <ShieldCheck size={20} />, t: "Encrypted uploads" },
                         { icon: <Clock size={20} />, t: "48h Express" },
                         { icon: <FileText size={20} />, t: "Third-party portal" },
-                        { icon: <Sparkles size={20} />, t: "AI-assisted (Ama)" },
+                        { icon: <Sparkles size={20} />, t: "AI-assisted (Abena)" },
                     ].map((x) => (
                         <div key={x.t} className="flex items-center gap-3 text-sm text-slate-700">
                             <div className="w-10 h-10 rounded-lg bg-white border border-black/5 flex items-center justify-center text-ghana-green">{x.icon}</div>

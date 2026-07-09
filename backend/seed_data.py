@@ -37,6 +37,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "whatsapp_admin": "+233000000000",
     "ai_model": "claude-sonnet-4-5-20250929",
     "usdt_discount_pct": 0.0,
+    "admin_notification_email": "mirtoken2022@gmail.com",
     "hubtel": {
         "sandbox": True,
         "api_id": "",
@@ -68,7 +69,7 @@ BASE_CSS = "font-family:Inter,Arial,sans-serif;color:#0A0A0A;line-height:1.6;"
 BOX = "border:1px solid #e5e7eb;border-radius:12px;padding:24px;max-width:560px;margin:24px auto;background:#fff;"
 BADGE = "display:inline-block;padding:4px 10px;border-radius:999px;background:#006B3F;color:#fff;font-weight:600;letter-spacing:1px;font-size:12px;"
 
-EMAIL_TEMPLATES_VERSION: int = 2  # bump to force re-seed of email_templates on next startup
+EMAIL_TEMPLATES_VERSION: int = 3  # bump to force re-seed of email_templates on next startup
 
 
 def _wrap(title: str, body_html: str) -> str:
@@ -171,6 +172,51 @@ DEFAULT_EMAIL_TEMPLATES: List[Dict[str, Any]] = [
 <p>Félicitations — votre visa Ghana à l'arrivée <strong>{{tracking}}</strong> a été """ + _badge("APPROUVÉ") + """.</p>
 <p>Votre visa électronique sera envoyé à cette adresse e-mail sous peu. Voyagez avec la version imprimée et votre passeport.</p>
 <p>Excellent séjour au Ghana. 🇬🇭</p>
+""",
+        ),
+    ),
+    # ---- Admin internal notifications (English only, sent to ops inbox) ----
+    _tpl(
+        "admin_new_submission", "en",
+        "[e.GHANA VISA] New application {{tracking}} — {{visa_type}}",
+        _wrap(
+            "New Application Submitted",
+            """
+<p>A new visa application has just been submitted.</p>
+<table style="width:100%;font-size:14px;border-collapse:collapse;margin-top:12px;">
+  <tr><td style="padding:6px 0;color:#64748b;">Tracking #</td><td style="padding:6px 0;"><strong>{{tracking}}</strong></td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Applicant</td><td style="padding:6px 0;">{{name}}</td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Email</td><td style="padding:6px 0;">{{email}}</td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Phone</td><td style="padding:6px 0;">{{phone}}</td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Passport country</td><td style="padding:6px 0;">{{passport_country}}</td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Visa type</td><td style="padding:6px 0;">{{visa_type}}</td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Processing</td><td style="padding:6px 0;">{{processing}}</td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Amount</td><td style="padding:6px 0;">USD {{amount}}</td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Arrival</td><td style="padding:6px 0;">{{arrival_date}}</td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Submitted at</td><td style="padding:6px 0;">{{submitted_at}}</td></tr>
+</table>
+<p style="margin-top:16px;color:#64748b;font-size:13px;">Payment is still pending. You will receive a separate email once the payment is confirmed.</p>
+""",
+        ),
+    ),
+    _tpl(
+        "admin_payment_success", "en",
+        "[e.GHANA VISA] Payment received {{tracking}} — USD {{amount}}",
+        _wrap(
+            "Payment Confirmed",
+            """
+<p>A payment has been successfully received for the application below.</p>
+<table style="width:100%;font-size:14px;border-collapse:collapse;margin-top:12px;">
+  <tr><td style="padding:6px 0;color:#64748b;">Tracking #</td><td style="padding:6px 0;"><strong>{{tracking}}</strong></td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Applicant</td><td style="padding:6px 0;">{{name}}</td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Email</td><td style="padding:6px 0;">{{email}}</td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Visa type</td><td style="padding:6px 0;">{{visa_type}}</td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Processing</td><td style="padding:6px 0;">{{processing}}</td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Amount paid</td><td style="padding:6px 0;"><strong>USD {{amount}}</strong></td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Payment method</td><td style="padding:6px 0;">{{payment_method}}</td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Paid at</td><td style="padding:6px 0;">{{paid_at}}</td></tr>
+</table>
+<p style="margin-top:16px;">You can now review and process this application from the Admin Command Center.</p>
 """,
         ),
     ),

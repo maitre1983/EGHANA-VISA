@@ -3,10 +3,10 @@ import { MessageCircle, X, Send } from "lucide-react";
 import api from "../lib/api";
 import { log } from "../lib/log";
 
-export default function AmaChat() {
+export default function AbenaChat() {
     const [open, setOpen] = useState(false);
     const [messages, setMessages] = useState([
-        { id: "welcome", role: "ai", text: "Akwaaba! I'm Ama, your Ghana Visa assistant. Ask me about prices, processing times, required documents or tracking." },
+        { id: "welcome", role: "ai", text: "Akwaaba! I'm Abena, your Ghana Visa assistant. Ask me about prices, processing times, required documents or tracking." },
     ]);
     const [input, setInput] = useState("");
     const [busy, setBusy] = useState(false);
@@ -29,7 +29,7 @@ export default function AmaChat() {
             setSessionId(data.session_id);
             setMessages((m) => [...m, { id: `a-${Date.now()}`, role: "ai", text: data.reply }]);
         } catch (err) {
-            log.warn("Ama chat error:", err?.message || err);
+            log.warn("Abena chat error:", err?.message || err);
             setMessages((m) => [...m, { id: `err-${Date.now()}`, role: "ai", text: "Sorry, I'm having trouble reaching my brain. Please try again." }]);
         } finally {
             setBusy(false);
@@ -39,24 +39,24 @@ export default function AmaChat() {
     return (
         <>
             <button
-                data-testid="ama-open"
+                data-testid="abena-open"
                 onClick={() => setOpen((o) => !o)}
                 className="fixed bottom-24 right-6 md:bottom-6 md:right-24 w-14 h-14 rounded-full shadow-xl z-50 flex items-center justify-center transition-transform hover:scale-105"
                 style={{ background: "#0A0A0A", color: "#FCD116" }}
-                aria-label="Open Ama chat"
+                aria-label="Open Abena chat"
             >
                 {open ? <X size={22} /> : <MessageCircle size={22} />}
             </button>
 
             {open && (
                 <div
-                    data-testid="ama-window"
+                    data-testid="abena-window"
                     className="fixed bottom-40 right-6 md:bottom-24 md:right-24 w-[350px] max-w-[92vw] h-[480px] bg-white rounded-xl shadow-2xl overflow-hidden z-50 flex flex-col border border-black/10"
                 >
                     <div className="bg-ghana-black text-white px-4 py-3 flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full ghana-stripe flex items-center justify-center text-ghana-black font-heading font-extrabold text-sm">A</div>
                         <div>
-                            <div className="font-heading font-semibold text-sm">Ama</div>
+                            <div className="font-heading font-semibold text-sm">Abena</div>
                             <div className="text-[10px] uppercase tracking-widest text-ghana-gold">Ghana Visa Assistant</div>
                         </div>
                     </div>
@@ -74,19 +74,19 @@ export default function AmaChat() {
                                 </div>
                             </div>
                         ))}
-                        {busy && <div className="text-xs text-slate-500 pl-2">Ama is typing…</div>}
+                        {busy && <div className="text-xs text-slate-500 pl-2">Abena is typing…</div>}
                     </div>
                     <div className="p-3 bg-white border-t border-black/5 flex gap-2">
                         <input
-                            data-testid="ama-input"
+                            data-testid="abena-input"
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
                             onKeyDown={(e) => e.key === "Enter" && send()}
-                            placeholder="Ask Ama a question…"
+                            placeholder="Ask Abena a question…"
                             className="flex-1 border border-black/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ghana-green"
                         />
                         <button
-                            data-testid="ama-send"
+                            data-testid="abena-send"
                             onClick={send}
                             disabled={busy}
                             className="bg-ghana-green text-white rounded-md px-3 py-2 hover:bg-ghana-green-dark transition-colors disabled:opacity-50"

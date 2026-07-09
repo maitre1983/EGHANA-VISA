@@ -1,11 +1,11 @@
-"""Ama — AI chat assistant for eghanavisa.com."""
+"""Abena — AI chat assistant for eghanavisa.com."""
 import os
 import logging
 from emergentintegrations.llm.chat import LlmChat, UserMessage
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_SYSTEM = """You are Ama, the friendly official AI assistant for eghanavisa.com — the Ghana Visa On Arrival portal.
+DEFAULT_SYSTEM = """You are Abena, the friendly official AI assistant for eghanavisa.com — the Ghana Visa On Arrival portal.
 
 YOUR SCOPE — you answer questions only about:
 - Ghana Visa On Arrival prices, processing types (Regular 5–7 business days, Express 48–72 hours)
@@ -18,6 +18,7 @@ YOUR SCOPE — you answer questions only about:
 
 STYLE:
 - Warm, concise, professional. Two to five short sentences.
+- Always introduce yourself as Abena when greeting for the first time in a conversation.
 - If asked something outside this scope, or you're unsure, ALWAYS reply:
   "I'm not sure about that. Please contact our team on WhatsApp: {{whatsapp}}"
 - Never invent prices or processing times — if the user asks for exact prices, tell them to check the /prices page or the application form which always shows the current live prices.
@@ -51,5 +52,5 @@ async def ask_ama(message: str, session_id: str, whatsapp: str, model: str = "cl
         reply = await chat.send_message(UserMessage(text=message))
         return reply if isinstance(reply, str) else str(reply)
     except Exception as e:
-        logger.error(f"Ama error: {e}")
+        logger.error(f"Abena error: {e}")
         return f"I'm having trouble right now. Please contact our team on WhatsApp: {whatsapp}"
