@@ -15,15 +15,19 @@ export default function Home() {
                     <div className="animate-fade-up">
                         <div className="inline-flex items-center gap-2 bg-ghana-green/10 text-ghana-green px-3 py-1 rounded-full text-xs font-semibold tracking-widest uppercase">
                             <span className="w-1.5 h-1.5 rounded-full bg-ghana-green animate-pulse" />
-                            Official Portal · e-Visa Ready
+                            eVisa · ETA · Independent Assistance
                         </div>
                         <h1 className="mt-6 text-4xl sm:text-5xl lg:text-6xl font-heading font-bold tracking-tight text-ghana-black leading-[1.05]">
-                            Your <span className="text-ghana-green">Ghana</span> visa,<br />
-                            <span className="text-ghana-red">approved</span> in as little as <span className="text-ghana-black">48 hours</span>.
+                            Apply for your <span className="text-ghana-green">Ghana</span> eVisa <span className="text-ghana-red">Online</span>
                         </h1>
                         <p className="mt-6 text-lg text-slate-600 max-w-lg">
-                            Skip the queue at Kotoka Airport. Apply online, upload your documents and receive your Visa On Arrival by email.
+                            Independent third-party platform assisting eligible travellers with Ghana Electronic Visa (eVisa) and Electronic Travel Authorisation (ETA) applications.
                         </p>
+                        <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-600">
+                            {["Secure", "Fast", "Transparent", "AI Assisted", "Multilingual"].map((b) => (
+                                <span key={b} className="px-2.5 py-1 rounded-full bg-slate-100 border border-black/5">{b}</span>
+                            ))}
+                        </div>
                         <div className="mt-8 flex flex-wrap gap-3">
                             <Link
                                 to="/apply"

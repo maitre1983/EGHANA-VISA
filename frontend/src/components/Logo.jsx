@@ -20,7 +20,7 @@ export default function Logo({ size = 40, showText = true }) {
             {showText && (
                 <div className="leading-tight">
                     <div className="font-heading font-bold tracking-wide text-ghana-black text-base">e.GHANA VISA</div>
-                    <div className="text-[10px] uppercase tracking-[0.2em] text-ghana-green font-semibold">Visa on Arrival</div>
+                    <div className="text-[10px] uppercase tracking-[0.2em] text-ghana-green font-semibold">eVisa &amp; ETA Assistance</div>
                 </div>
             )}
         </div>

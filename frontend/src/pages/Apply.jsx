@@ -18,7 +18,7 @@ export default function Apply() {
     const [countries, setCountries] = useState({ passport: [], travel_from: [] });
 
     const [form, setForm] = useState({
-        visa_code: "tourist_30",
+        visa_code: "tourist_evisa",
         passport_country: "",
         passport_number: "",
         passport_type: "Ordinary",
@@ -32,6 +32,12 @@ export default function Apply() {
         profession: "",
         processing: "regular",
         lang: "en",
+        // Business fields
+        company_name: "",
+        host_company: "",
+        business_registration: "",
+        business_address: "",
+        purpose_of_visit: "",
     });
     const [files, setFiles] = useState({});
     const [acceptTerms, setAcceptTerms] = useState(false);
@@ -57,15 +63,20 @@ export default function Apply() {
         [config, form.visa_code]
     );
     const expressAvailable = selectedVisa?.express_available !== false;
+    const priorityAvailable = selectedVisa?.priority_available !== false;
+    const requiresBusinessFields = !!selectedVisa?.requires_business_fields;
 
-    // Force regular if selected visa doesn't support express
+    // Force regular if selected visa doesn't support express/priority
     useEffect(() => {
-        if (!expressAvailable && form.processing === "express") {
+        if ((form.processing === "express" && !expressAvailable) ||
+            (form.processing === "priority" && !priorityAvailable)) {
             setForm((f) => ({ ...f, processing: "regular" }));
         }
-    }, [expressAvailable, form.processing]);
+    }, [expressAvailable, priorityAvailable, form.processing]);
 
-    const surcharge = form.processing === "express" && expressAvailable ? (config?.express_surcharge_usd || 0) : 0;
+    let surcharge = 0;
+    if (form.processing === "express" && expressAvailable) surcharge = config?.express_surcharge_usd || 0;
+    else if (form.processing === "priority" && priorityAvailable) surcharge = config?.priority_surcharge_usd || 0;
     const total = (selectedVisa?.price_usd || 0) + surcharge;
 
     const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
@@ -77,7 +88,8 @@ export default function Apply() {
         form.visa_code && form.passport_country && form.passport_number &&
         form.passport_expiry && form.travelling_from && form.arrival_date &&
         form.departure_date && form.full_name && form.email && form.phone && form.profession &&
-        DOC_TYPES.every((d) => files[d.key]);
+        DOC_TYPES.every((d) => files[d.key]) &&
+        (!requiresBusinessFields || (form.company_name && form.host_company && form.business_registration && form.purpose_of_visit));
 
     const submit = async () => {
         if (!canSubmit || submitting) return;
@@ -105,6 +117,9 @@ export default function Apply() {
                 <div className="text-xs uppercase tracking-[0.25em] text-ghana-green font-semibold">Application</div>
                 <h1 className="mt-2 text-3xl md:text-4xl font-heading font-bold">Ghana Visa On Arrival Form</h1>
                 <p className="mt-3 text-slate-600">All fields and documents are <span className="font-semibold text-ghana-red">mandatory</span>. Documents must be JPEG, PNG or PDF (max {config?.max_upload_mb || 8} MB each).</p>
+                <div className="mt-4 text-xs text-slate-500 bg-slate-50 border border-black/5 rounded-md px-3 py-2" data-testid="apply-compliance-disclaimer">
+                    <strong>Independent third-party assistance:</strong> eGhanaVisa.com is not affiliated with the Government of Ghana, the Ghana Immigration Service or the Ministry of Foreign Affairs. We assist eligible travellers with Ghana Electronic Visa (eVisa) and ETA applications.
+                </div>
             </div>
 
             <div className="grid lg:grid-cols-12 gap-8">
@@ -120,19 +135,27 @@ export default function Apply() {
                                 </select>
                             </Field>
                             <Field label="Processing speed">
-                                <div className={`grid ${expressAvailable ? "grid-cols-2" : "grid-cols-1"} gap-2`}>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                                     <button type="button" onClick={() => set("processing", "regular")}
                                         data-testid="apply-regular"
                                         className={`p-3 rounded-md border text-left text-sm transition-colors ${form.processing === "regular" ? "border-ghana-green bg-ghana-green/5" : "border-black/10 bg-white hover:bg-slate-50"}`}>
                                         <div className="font-semibold">Regular</div>
                                         <div className="text-xs text-slate-500">{selectedVisa?.processing_time_label || "5–7 business days"} · included</div>
                                     </button>
+                                    {priorityAvailable && (
+                                        <button type="button" onClick={() => set("processing", "priority")}
+                                            data-testid="apply-priority"
+                                            className={`p-3 rounded-md border text-left text-sm transition-colors ${form.processing === "priority" ? "border-ghana-green bg-ghana-green/5" : "border-black/10 bg-white hover:bg-slate-50"}`}>
+                                            <div className="font-semibold">Priority</div>
+                                            <div className="text-xs text-slate-500">3 business days · +${config?.priority_surcharge_usd || 0}</div>
+                                        </button>
+                                    )}
                                     {expressAvailable && (
                                         <button type="button" onClick={() => set("processing", "express")}
                                             data-testid="apply-express"
                                             className={`p-3 rounded-md border text-left text-sm transition-colors ${form.processing === "express" ? "border-ghana-gold bg-ghana-gold/10" : "border-black/10 bg-white hover:bg-slate-50"}`}>
                                             <div className="font-semibold">Express</div>
-                                            <div className="text-xs text-slate-500">48–72 hours · +${config?.express_surcharge_usd || 0}</div>
+                                            <div className="text-xs text-slate-500">48–72h · +${config?.express_surcharge_usd || 0}</div>
                                         </button>
                                     )}
                                 </div>
@@ -202,8 +225,34 @@ export default function Apply() {
                         </div>
                     </Section>
 
-                    <Section title="5. Documents">
-                        <div className="grid sm:grid-cols-2 gap-4">
+                    {requiresBusinessFields && (
+                        <Section title="4b. Business details">
+                            <div className="grid sm:grid-cols-2 gap-4">
+                                <Field label="Company name">
+                                    <input data-testid="apply-company-name" value={form.company_name} onChange={(e) => set("company_name", e.target.value)} className={textInput} />
+                                </Field>
+                                <Field label="Host company (in Ghana)">
+                                    <input data-testid="apply-host-company" value={form.host_company} onChange={(e) => set("host_company", e.target.value)} className={textInput} />
+                                </Field>
+                                <Field label="Business registration number">
+                                    <input data-testid="apply-business-reg" value={form.business_registration} onChange={(e) => set("business_registration", e.target.value)} className={textInput} />
+                                </Field>
+                                <Field label="Business address">
+                                    <input data-testid="apply-business-address" value={form.business_address} onChange={(e) => set("business_address", e.target.value)} className={textInput} />
+                                </Field>
+                                <div className="sm:col-span-2">
+                                    <Field label="Purpose of visit">
+                                        <textarea data-testid="apply-purpose" value={form.purpose_of_visit} onChange={(e) => set("purpose_of_visit", e.target.value)} rows={2} className={textInput} />
+                                    </Field>
+                                </div>
+                            </div>
+                            <div className="mt-3 text-xs text-slate-500 bg-slate-50 border border-black/5 rounded px-3 py-2">
+                                Business applications also require an <strong>Invitation Letter</strong> — upload it as one of the documents below (either as the flight ticket slot or via WhatsApp support).
+                            </div>
+                        </Section>
+                    )}
+
+                    <Section title="5. Documents">                        <div className="grid sm:grid-cols-2 gap-4">
                             {DOC_TYPES.map((d) => (
                                 <label key={d.key} className={`border-2 border-dashed rounded-lg p-4 flex flex-col items-center justify-center text-center cursor-pointer transition-colors ${files[d.key] ? "border-ghana-green bg-ghana-green/5" : "border-black/10 bg-slate-50 hover:bg-slate-100"}`}>
                                     <input type="file" accept=".jpg,.jpeg,.png,.pdf,image/*,application/pdf" className="hidden" data-testid={`apply-file-${d.key}`}
@@ -260,7 +309,11 @@ export default function Apply() {
                             <h3 className="mt-2 font-heading text-xl font-semibold">{selectedVisa?.name_en || "Select a visa"}</h3>
                             <div className="mt-4 space-y-2 text-sm">
                                 <Row label="Base price" value={`$${selectedVisa?.price_usd || 0}`} />
-                                <Row label="Processing" value={form.processing === "express" ? "Express 48–72h" : `Regular · ${selectedVisa?.processing_time_label || "5–7d"}`} />
+                                <Row label="Processing" value={
+                                    form.processing === "express" ? "Express 48–72h" :
+                                    form.processing === "priority" ? "Priority 3d" :
+                                    `Regular · ${selectedVisa?.processing_time_label || "5–7d"}`
+                                } />
                                 <Row label="Surcharge" value={`+$${surcharge}`} />
                                 <div className="border-t border-black/5 my-3" />
                                 <Row label="Total" value={`$${total}`} bold />

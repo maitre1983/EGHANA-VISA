@@ -15,17 +15,20 @@ export default function Footer() {
                 <div>
                     <h4 className="text-white font-heading font-semibold mb-3 text-sm uppercase tracking-widest">Services</h4>
                     <ul className="space-y-2 text-sm">
-                        <li><Link to="/apply" className="hover:text-ghana-gold" data-testid="footer-apply">Apply for Visa</Link></li>
+                        <li><Link to="/apply" className="hover:text-ghana-gold" data-testid="footer-apply">Apply for eVisa</Link></li>
                         <li><Link to="/track" className="hover:text-ghana-gold" data-testid="footer-track">Track Application</Link></li>
                         <li><Link to="/prices" className="hover:text-ghana-gold" data-testid="footer-prices">Prices</Link></li>
+                        <li><Link to="/ghana-evisa" className="hover:text-ghana-gold" data-testid="footer-evisa">Ghana eVisa Guide</Link></li>
+                        <li><Link to="/ghana-business-visa" className="hover:text-ghana-gold" data-testid="footer-business">Business Visa Guide</Link></li>
                     </ul>
                 </div>
                 <div>
                     <h4 className="text-white font-heading font-semibold mb-3 text-sm uppercase tracking-widest">Support</h4>
                     <ul className="space-y-2 text-sm">
                         <li><Link to="/faq" className="hover:text-ghana-gold" data-testid="footer-faq">FAQ</Link></li>
-                        <li><Link to="/terms" className="hover:text-ghana-gold" data-testid="footer-terms">Terms & Conditions</Link></li>
+                        <li><Link to="/terms" className="hover:text-ghana-gold" data-testid="footer-terms">Terms &amp; Conditions</Link></li>
                         <li><Link to="/privacy" className="hover:text-ghana-gold" data-testid="footer-privacy">Privacy Policy</Link></li>
+                        <li><Link to="/disclaimer" className="hover:text-ghana-gold" data-testid="footer-disclaimer">Disclaimer</Link></li>
                     </ul>
                 </div>
                 <div>
@@ -69,6 +72,9 @@ export default function Footer() {
                 </div>
             </div>
             <div className="border-t border-white/10 py-6 text-center text-xs text-white/50">
+                <p className="max-w-4xl mx-auto px-4 mb-3" data-testid="footer-disclaimer-text">
+                    eGhanaVisa.com is an <strong className="text-white/70">independent third-party</strong> travel assistance platform and is <strong className="text-white/70">not affiliated with or operated by</strong> the Government of Ghana, the Ghana Immigration Service or the Ministry of Foreign Affairs.
+                </p>
                 © {new Date().getFullYear()} eghanavisa.com — All rights reserved
             </div>
         </footer>

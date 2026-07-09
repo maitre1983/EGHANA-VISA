@@ -13,6 +13,7 @@ import Prices from "./pages/Prices";
 import FAQ from "./pages/FAQ";
 import Terms from "./pages/Terms";
 import Privacy from "./pages/Privacy";
+import SeoLanding from "./pages/SeoLanding";
 
 import AdminLogin from "./pages/AdminLogin";
 import AdminChangePassword from "./pages/AdminChangePassword";
@@ -38,6 +39,18 @@ function App() {
                         <Route path="/faq" element={<FAQ />} />
                         <Route path="/terms" element={<Terms />} />
                         <Route path="/privacy" element={<Privacy />} />
+                        <Route path="/ghana-evisa" element={<SeoLanding />} />
+                        <Route path="/ghana-tourist-visa" element={<SeoLanding />} />
+                        <Route path="/ghana-business-visa" element={<SeoLanding />} />
+                        <Route path="/ghana-eta" element={<SeoLanding />} />
+                        <Route path="/ghana-visa-processing-time" element={<SeoLanding />} />
+                        <Route path="/ghana-visa-fees" element={<SeoLanding />} />
+                        <Route path="/ghana-entry-requirements" element={<SeoLanding />} />
+                        <Route path="/ghana-immigration-guide" element={<SeoLanding />} />
+                        <Route path="/ghana-airport-guide" element={<SeoLanding />} />
+                        <Route path="/ghana-travel-guide" element={<SeoLanding />} />
+                        <Route path="/ghana-visa-faq" element={<SeoLanding />} />
+                        <Route path="/disclaimer" element={<SeoLanding />} />
                     </Route>
 
                     <Route path="/admin" element={<AdminLogin />} />

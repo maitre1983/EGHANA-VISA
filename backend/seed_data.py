@@ -8,10 +8,12 @@ def _now() -> str:
 
 
 DEFAULT_VISA_TYPES: List[Dict[str, Any]] = [
-    {"code": "tourist_30", "name_en": "30 Days Tourist Visa", "name_fr": "Visa touristique 30 jours", "days": 30, "price_usd": 350.0, "active": True, "always_active": True, "express_available": True, "processing_time_label": "5–7 business days", "requires_presence": False},
-    {"code": "extended_60", "name_en": "60 Days Extended Visa", "name_fr": "Visa étendu 60 jours", "days": 60, "price_usd": 500.0, "active": False, "always_active": False, "express_available": True, "processing_time_label": "5–7 business days", "requires_presence": False},
-    {"code": "residence_1y", "name_en": "1 Year Residence Permit", "name_fr": "Permis de résidence 1 an", "days": 365, "price_usd": 1200.0, "active": False, "always_active": False, "express_available": False, "processing_time_label": "45–60 days · in-country presence required", "requires_presence": True},
+    {"code": "tourist_evisa", "name_en": "Tourist eVisa", "name_fr": "eVisa touristique", "days": 30, "price_usd": 350.0, "active": True, "always_active": True, "express_available": True, "priority_available": True, "processing_time_label": "5–7 business days", "requires_presence": False, "category": "tourist"},
+    {"code": "business_evisa", "name_en": "Business eVisa (Single Entry)", "name_fr": "eVisa affaires (entrée unique)", "days": 30, "price_usd": 500.0, "active": True, "always_active": False, "express_available": True, "priority_available": True, "processing_time_label": "5–7 business days", "requires_presence": False, "category": "business", "requires_business_fields": True},
 ]
+
+# Legacy codes that must be removed from DB during startup migration
+OBSOLETE_VISA_CODES: List[str] = ["extended_60", "residence_1y", "tourist_30"]
 
 DEFAULT_PAYMENT_METHODS: List[Dict[str, Any]] = [
     {"code": "hubtel_visa", "name": "Visa Card via Hubtel", "active": True, "always_active": False},
@@ -30,6 +32,7 @@ DEFAULT_NOWPAYMENTS: Dict[str, Any] = {
 DEFAULT_SETTINGS: Dict[str, Any] = {
     "id": "singleton",
     "express_surcharge_usd": 50.0,
+    "priority_surcharge_usd": 25.0,
     "max_upload_mb": 8,
     "whatsapp_admin": "+233000000000",
     "ai_model": "claude-sonnet-4-5-20250929",

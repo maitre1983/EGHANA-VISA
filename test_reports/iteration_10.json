@@ -1,0 +1,50 @@
+{
+  "summary": "Iteration 10 (SAFE MODE additive upgrade) — backend + frontend fully verified. NowPayments PRODUCTION configured, 2-visa migration complete, 3-tier processing math correct, business fields validation working, tourist regression clean, 12 SEO pages render with H1/title/sections/CTA/FAQPage JSON-LD schema, footer/apply disclaimers present, ADMIN_RESET_ON_BOOT flag works and has been UNSET after testing. Backend: 14/14 pytest passed (1 skipped — no admin endpoint to toggle priority_available flag). Frontend: 15/15 apply-page + 22/23 home/footer + 72/72 SEO pages passed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Apply page", "issues": ["Page title still reads 'Ghana Visa On Arrival Form' — inconsistent with rebrand to eVisa & ETA Assistance. Suggest 'Ghana eVisa & ETA Application' for consistency (LOW priority)"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration10.py",
+    "/app/test_reports/pytest/iteration_10_results.xml"
+  ],
+  "action_items": [
+    "(Optional) Rename Apply page H1 from 'Ghana Visa On Arrival Form' to something aligned with the 'eVisa & ETA Assistance' rebrand.",
+    "(Nice-to-have) Console hydration warning on /apply — <span> nested inside <option> for visa dropdown (activeVisaTypes.map produces <option><span>name_en</span></option>). Not functional but generates React hydration error in dev. Simplify to plain text inside <option>."
+  ],
+  "critical_code_review_comments": [
+    "server.py:_seed_default_admin — the ADMIN_RESET_ON_BOOT flag is loaded via load_dotenv from backend/.env, so users must remove the .env line and restart to disable. Documented in the review request but consider logging the current force_reset value at startup regardless (for observability).",
+    "TestPriorityDisabled test was SKIPPED because there is no admin endpoint to toggle a visa's priority_available flag. Only price and active flag can be toggled today. Not a bug but reduces automated coverage of the 'Priority not available' HTTP 400 branch. Server code path was manually reviewed and looks correct (lines 239–240 of server.py).",
+    "Console hydration warning: /apply visa dropdown has <span> inside <option>. Chrome tolerates this but React 18 hydration flags it. Consider building option label as a plain string.",
+    "Nowpayments IPN webhook route /api/webhooks/nowpayments is mounted at app level (line 997), which is CORRECT (external callback must not require auth). Good."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration10.py",
+    "/app/backend/.env (temporarily added ADMIN_RESET_ON_BOOT=true for verification, then REMOVED. Current state clean.)"
+  ],
+  "success_rate": {"backend": "100% (14/14, 1 skipped by design)", "frontend": "100% (109/110 assertions; the 1 'fail' was a false-negative HTML entity match, visually confirmed)"},
+  "test_credentials": "admin@eghanavisa.com / Admin@2026 — WORKING, must_change_password=false. Verified before and after ADMIN_RESET_ON_BOOT test.",
+  "seed_data_creation": "Created ~10 test applications (TEST_ prefix on names). Some paid via Hubtel sandbox, admin transitions applied on one. All can be safely purged if needed.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All iteration 10 features are green. Backend at /api/config now returns nowpayments_configured=true, sandbox=false, priority_surcharge_usd=25, exactly 2 visa types (tourist_evisa, business_evisa). ADMIN_RESET_ON_BOOT flag was set/tested/unset — .env is clean. Preview backend URL: https://ghana-voa-platform.preview.emergentagent.com. Real NowPayments production keys are configured; DO NOT trigger real crypto payments. Test suite at /app/backend/tests/test_iteration10.py is safe to re-run on every iteration.",
+  "detailed_verification": {
+    "nowpayments_prod": {"configured": true, "sandbox": false, "usdttrc20_supported": true, "usdtbsc_supported": true, "test_endpoint_returns_ok_true_mode_production": true, "real_crypto_initiate_returned_simulated_false_with_valid_payment_id_and_pay_address": true},
+    "visa_migration": {"tourist_evisa": "present, active, $350, category=tourist", "business_evisa": "present, active, $500, category=business, requires_business_fields=true", "obsolete_removed": ["extended_60", "residence_1y", "tourist_30"]},
+    "priority_tier": {"surcharge_usd": 25, "tourist_priority_total": 375, "tourist_express_total": 400, "business_priority_total": 525, "invalid_processing_returns_400": true},
+    "business_validation": {"all_missing_returns_400_with_5_field_names": true, "partial_missing_host_company_returns_400_with_host_company_in_detail": true, "all_populated_returns_200_with_tracking_no": true},
+    "tourist_regression": {"tourist_regular_still_works_at_350": true, "hubtel_sandbox_pay_and_track_ok": true, "admin_status_in_progress_and_done_ok": true},
+    "admin_reset_on_boot": {"flag_read_from_env": true, "resets_password_and_clears_must_change_password": true, "warning_logged": "'ADMIN_RESET_ON_BOOT=true — reset admin password for admin@eghanavisa.com'", "env_unset_after_test": true, "clean_restart_verified": true},
+    "frontend_home": {"h1": "Apply for your Ghana eVisa Online", "subtitle_contains_independent_third_party_platform": true, "logo_subtitle_evisa_eta_assistance_rendered": true, "benefits_pills": ["Secure", "Fast", "Transparent", "AI Assisted", "Multilingual"]},
+    "frontend_footer": {"disclaimer_data_testid_present": true, "services_column_5_links": true, "support_column_4_links": true},
+    "frontend_apply": {"compliance_banner_data_testid": true, "visa_dropdown_only_2_options": true, "3_tier_buttons_visible": true, "priority_updates_total_by_25": true, "express_updates_total_by_50": true, "business_details_section_appears_when_business_selected": true, "business_details_hidden_when_tourist_selected": true, "all_5_business_field_labels_present": true},
+    "frontend_seo_pages": {"pages_tested": 12, "all_have_h1_data_testid": true, "all_titles_contain_eGhanaVisa": true, "all_have_3_plus_sections": true, "all_have_related_guides_pills": true, "all_have_cta_data_testid_seo_cta_apply": true, "all_have_FAQPage_JSON_LD_schema": true}
+  }
+}

@@ -20,7 +20,7 @@ from email_service import EmailService
 from hubtel_service import initiate_checkout, is_sandbox
 from ama_chat import ask_ama
 import nowpayments_service as nowp
-from seed_data import DEFAULT_SETTINGS, DEFAULT_EMAIL_TEMPLATES, EMAIL_TEMPLATES_VERSION
+from seed_data import DEFAULT_SETTINGS, DEFAULT_EMAIL_TEMPLATES, EMAIL_TEMPLATES_VERSION, OBSOLETE_VISA_CODES
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -46,8 +46,19 @@ def now_iso():
 async def _seed_default_admin() -> None:
     admin_email = os.environ.get("DEFAULT_ADMIN_EMAIL", "admin@eghanavisa.com")
     admin_pass = os.environ.get("DEFAULT_ADMIN_PASSWORD", "Admin@2026")
+    force_reset = os.environ.get("ADMIN_RESET_ON_BOOT", "").lower() in ("1", "true", "yes")
     existing = await db.admins.find_one({"email": admin_email}, {"_id": 0})
     if existing:
+        if force_reset:
+            await db.admins.update_one(
+                {"email": admin_email},
+                {"$set": {
+                    "password_hash": hash_password(admin_pass),
+                    "must_change_password": False,
+                    "updated_at": now_iso(),
+                }},
+            )
+            logger.warning(f"ADMIN_RESET_ON_BOOT=true — reset admin password for {admin_email}")
         return
     await db.admins.insert_one({
         "id": str(uuid.uuid4()),
@@ -86,9 +97,30 @@ async def _seed_or_migrate_settings() -> None:
         updates["nowpayments"] = DEFAULT_SETTINGS["nowpayments"]
     if "usdt_discount_pct" not in existing:
         updates["usdt_discount_pct"] = 0.0
-    vt_list, changed = _patch_visa_type_fields(existing)
-    if changed:
+    if "priority_surcharge_usd" not in existing:
+        updates["priority_surcharge_usd"] = DEFAULT_SETTINGS["priority_surcharge_usd"]
+
+    # Migrate visa types: remove obsolete + add missing new ones
+    vt_list = existing.get("visa_types", [])
+    original_len = len(vt_list)
+    vt_list = [vt for vt in vt_list if vt.get("code") not in OBSOLETE_VISA_CODES]
+    existing_codes = {vt["code"] for vt in vt_list}
+    for default_vt in DEFAULT_SETTINGS["visa_types"]:
+        if default_vt["code"] not in existing_codes:
+            vt_list.append(dict(default_vt))
+    # Backfill missing fields on existing
+    default_by_code = {d["code"]: d for d in DEFAULT_SETTINGS["visa_types"]}
+    for vt in vt_list:
+        default_vt = default_by_code.get(vt.get("code"))
+        if not default_vt:
+            continue
+        for field in ("express_available", "priority_available", "processing_time_label",
+                      "requires_presence", "category", "requires_business_fields"):
+            if field in default_vt and field not in vt:
+                vt[field] = default_vt[field]
+    if len(vt_list) != original_len or vt_list != existing.get("visa_types", []):
         updates["visa_types"] = vt_list
+
     if updates:
         await db.settings.update_one({"id": "singleton"}, {"$set": updates})
         logger.info(f"Patched settings with: {list(updates.keys())}")
@@ -156,6 +188,7 @@ async def public_config():
         "nowpayments_configured": nowp.is_configured(np_cfg),
         "nowpayments_sandbox": bool(np_cfg.get("sandbox", True)),
         "usdt_discount_pct": float(s.get("usdt_discount_pct", 0.0)),
+        "priority_surcharge_usd": float(s.get("priority_surcharge_usd", 25.0)),
     }
 
 
@@ -181,8 +214,14 @@ class ApplicationIn(BaseModel):
     email: EmailStr
     phone: str
     profession: str
-    processing: str  # 'regular' | 'express'
+    processing: str  # 'regular' | 'priority' | 'express'
     lang: str = "en"
+    # Optional business fields (only used when visa is business_evisa)
+    company_name: Optional[str] = None
+    host_company: Optional[str] = None
+    business_registration: Optional[str] = None
+    business_address: Optional[str] = None
+    purpose_of_visit: Optional[str] = None
 
 
 @api.post("/applications")
@@ -193,13 +232,26 @@ async def create_application(payload: ApplicationIn):
         raise HTTPException(status_code=400, detail="Visa type is not currently available")
 
     processing = payload.processing.lower()
-    if processing not in ("regular", "express"):
+    if processing not in ("regular", "priority", "express"):
         raise HTTPException(status_code=400, detail="Invalid processing type")
     if processing == "express" and not visa.get("express_available", True):
         raise HTTPException(status_code=400, detail="Express processing is not available for this visa type")
+    if processing == "priority" and not visa.get("priority_available", True):
+        raise HTTPException(status_code=400, detail="Priority processing is not available for this visa type")
 
-    surcharge = float(settings.get("express_surcharge_usd", 50.0)) if processing == "express" else 0.0
+    surcharge = 0.0
+    if processing == "express":
+        surcharge = float(settings.get("express_surcharge_usd", 50.0))
+    elif processing == "priority":
+        surcharge = float(settings.get("priority_surcharge_usd", 25.0))
     total = price + surcharge
+
+    # Business fields required for business visas
+    if visa.get("requires_business_fields"):
+        missing = [f for f in ("company_name", "host_company", "business_registration", "purpose_of_visit")
+                   if not (getattr(payload, f) or "").strip()]
+        if missing:
+            raise HTTPException(status_code=400, detail=f"Missing business fields: {', '.join(missing)}")
 
     tracking = gen_tracking()
     while await db.applications.find_one({"tracking_no": tracking}, {"_id": 0}):
