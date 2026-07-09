@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ShieldCheck, Clock, FileText, Sparkles, ArrowRight, CheckCircle2 } from "lucide-react";
 import api from "../lib/api";
+import { trackEvent } from "../lib/analytics";
 
 export default function Home() {
     const [config, setConfig] = useState(null);
@@ -153,7 +154,7 @@ export default function Home() {
                                     )}
                                 </ul>
                                 {v.active ? (
-                                    <Link to="/apply" className="mt-6 inline-flex items-center gap-2 bg-ghana-black text-white px-5 py-2.5 rounded-md text-sm font-medium hover:bg-ghana-black/90 transition-colors" data-testid={`home-select-${v.code}`}>
+                                    <Link to="/apply" onClick={() => trackEvent("apply_click", { source: "home-card", visa_code: v.code })} className="mt-6 inline-flex items-center gap-2 bg-ghana-black text-white px-5 py-2.5 rounded-md text-sm font-medium hover:bg-ghana-black/90 transition-colors" data-testid={`home-select-${v.code}`}>
                                         Apply <ArrowRight size={14} />
                                     </Link>
                                 ) : (

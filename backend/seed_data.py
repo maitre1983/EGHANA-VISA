@@ -38,6 +38,9 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "ai_model": "claude-sonnet-4-5-20250929",
     "usdt_discount_pct": 0.0,
     "admin_notification_email": "mirtoken2022@gmail.com",
+    "ga4_measurement_id": "",
+    "gsc_verification": "",
+    "clarity_project_id": "",
     "hubtel": {
         "sandbox": True,
         "api_id": "",

@@ -29,6 +29,7 @@ export default function Footer() {
                         <li><Link to="/terms" className="hover:text-ghana-gold" data-testid="footer-terms">Terms &amp; Conditions</Link></li>
                         <li><Link to="/privacy" className="hover:text-ghana-gold" data-testid="footer-privacy">Privacy Policy</Link></li>
                         <li><Link to="/disclaimer" className="hover:text-ghana-gold" data-testid="footer-disclaimer">Disclaimer</Link></li>
+                        <li><button type="button" onClick={() => window.dispatchEvent(new CustomEvent("egv:consent-open"))} className="hover:text-ghana-gold text-left" data-testid="footer-cookie-preferences">Cookie preferences</button></li>
                     </ul>
                 </div>
                 <div>

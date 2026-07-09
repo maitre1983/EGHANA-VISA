@@ -4,6 +4,7 @@ import { CreditCard, Bitcoin, ShieldCheck, CheckCircle2, Loader2, Copy, Clock } 
 import { toast } from "sonner";
 import api from "../lib/api";
 import { log } from "../lib/log";
+import { trackEvent } from "../lib/analytics";
 
 export default function Payment() {
     const { tracking } = useParams();
@@ -23,6 +24,7 @@ export default function Payment() {
 
     const startPayment = async () => {
         setLoading(true);
+        trackEvent("payment_click", { method: "hubtel", tracking });
         try {
             const { data } = await api.post("/payments/initiate", { tracking_no: tracking });
             if (data.sandbox) setSandboxTx(data);
@@ -42,6 +44,7 @@ export default function Payment() {
 
     const startCrypto = async (network) => {
         setLoading(true);
+        trackEvent("payment_click", { method: `usdt_${network}`, tracking });
         try {
             const { data } = await api.post("/payments/crypto/initiate", { tracking_no: tracking, network });
             setCrypto(data);

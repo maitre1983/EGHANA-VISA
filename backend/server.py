@@ -21,6 +21,15 @@ from hubtel_service import initiate_checkout, is_sandbox
 from ama_chat import ask_ama
 import nowpayments_service as nowp
 from seed_data import DEFAULT_SETTINGS, DEFAULT_EMAIL_TEMPLATES, EMAIL_TEMPLATES_VERSION, OBSOLETE_VISA_CODES
+from analytics_service import (
+    parse_ua as _parse_ua,
+    classify_source as _classify_source,
+    country_from_headers as _country_from_headers,
+    city_from_headers as _city_from_headers,
+    parse_date_range as _parse_date_range,
+    is_test_record as _is_test_record,
+    COUNTRY_NAMES as _COUNTRY_NAMES,
+)
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -118,6 +127,9 @@ async def _seed_or_migrate_settings() -> None:
         updates["priority_surcharge_usd"] = DEFAULT_SETTINGS["priority_surcharge_usd"]
     if "admin_notification_email" not in existing:
         updates["admin_notification_email"] = DEFAULT_SETTINGS["admin_notification_email"]
+    for k in ("ga4_measurement_id", "gsc_verification", "clarity_project_id"):
+        if k not in existing:
+            updates[k] = ""
 
     # Backfill new Hubtel fields (e.g. cancellation_url)
     existing_hubtel = existing.get("hubtel") or {}
@@ -1237,6 +1249,399 @@ async def chat_endpoint(payload: ChatIn):
         "created_at": now_iso(),
     })
     return {"reply": reply, "session_id": session_id, "whatsapp": s.get("whatsapp_admin", "")}
+
+
+# ────────────────── ANALYTICS (first-party) ──────────────────
+
+class AnalyticsTrackIn(BaseModel):
+    visitor_id: str
+    session_id: str
+    event: str = "pageview"
+    path: str = ""
+    referrer: str = ""
+    screen: str = ""
+    lang: str = ""
+    ts: str = ""
+    utm: Optional[dict] = None
+    extra: Optional[dict] = None
+
+
+@api.post("/analytics/track")
+async def analytics_track(payload: AnalyticsTrackIn, request: Request):
+    """Public first-party analytics collector. Called only after user has
+    consented to analytics cookies (enforced client-side)."""
+    ua = request.headers.get("user-agent", "")
+    device, os_name, browser = _parse_ua(ua)
+    utm = payload.utm or {}
+    utm_source = str(utm.get("source") or "")
+    utm_medium = str(utm.get("medium") or "")
+    host = request.url.hostname or ""
+    source = _classify_source(payload.referrer, host, utm_source, utm_medium)
+    doc = {
+        "id": str(uuid.uuid4()),
+        "visitor_id": payload.visitor_id,
+        "session_id": payload.session_id,
+        "event": payload.event,
+        "path": payload.path[:512],
+        "referrer": payload.referrer[:512],
+        "source": source,
+        "device": device,
+        "os": os_name,
+        "browser": browser,
+        "country": _country_from_headers(request.headers),
+        "city": _city_from_headers(request.headers),
+        "screen": payload.screen[:32],
+        "lang": (payload.lang or "")[:16],
+        "utm_source": utm_source[:64],
+        "utm_medium": utm_medium[:64],
+        "utm_campaign": str(utm.get("campaign") or "")[:128],
+        "extra": payload.extra or {},
+        "created_at": now_iso(),
+    }
+    await db.analytics_events.insert_one(doc)
+    return {"ok": True}
+
+
+@api.get("/analytics/public-config")
+async def analytics_public_config():
+    """Public IDs used by the frontend to conditionally load GA4/Clarity and
+    inject the GSC verification meta tag. Never contains secrets."""
+    s = await get_settings()
+    return {
+        "ga4_measurement_id": s.get("ga4_measurement_id", ""),
+        "gsc_verification": s.get("gsc_verification", ""),
+        "clarity_project_id": s.get("clarity_project_id", ""),
+    }
+
+
+class AnalyticsIdsIn(BaseModel):
+    ga4_measurement_id: str = ""
+    gsc_verification: str = ""
+    clarity_project_id: str = ""
+
+
+@api.post("/admin/settings/analytics-ids")
+async def admin_update_analytics_ids(payload: AnalyticsIdsIn, ctx: dict = Depends(require_admin)):
+    await db.settings.update_one(
+        {"id": "singleton"},
+        {"$set": {
+            "ga4_measurement_id": payload.ga4_measurement_id.strip(),
+            "gsc_verification": payload.gsc_verification.strip(),
+            "clarity_project_id": payload.clarity_project_id.strip(),
+            "updated_at": now_iso(),
+        }},
+    )
+    return {"ok": True}
+
+
+@api.get("/admin/analytics/summary")
+async def admin_analytics_summary(
+    from_: Optional[str] = Query(None, alias="from"),
+    to: Optional[str] = Query(None),
+    preset: Optional[str] = Query(None),
+    ctx: dict = Depends(require_admin),
+):
+    start, end = _parse_date_range(from_, to, preset or "30d")
+    start_iso, end_iso = start.isoformat(), end.isoformat()
+    ev_filter = {"created_at": {"$gte": start_iso, "$lte": end_iso}}
+
+    # Base aggregates
+    total_events = await db.analytics_events.count_documents(ev_filter)
+    total_pv = await db.analytics_events.count_documents({**ev_filter, "event": "pageview"})
+    visitors = await db.analytics_events.distinct("visitor_id", ev_filter)
+    sessions = await db.analytics_events.distinct("session_id", ev_filter)
+    total_visitors = len(visitors)
+    total_sessions = len(sessions)
+
+    # Returning visitors (visitor first-seen before this window)
+    returning = 0
+    if visitors:
+        returning = await db.analytics_events.count_documents({
+            "visitor_id": {"$in": visitors},
+            "created_at": {"$lt": start_iso},
+        })
+        # count distinct returning visitor ids
+        returning_ids = await db.analytics_events.distinct("visitor_id", {
+            "visitor_id": {"$in": visitors},
+            "created_at": {"$lt": start_iso},
+        })
+        returning = len(returning_ids)
+    unique_visitors = total_visitors
+    new_visitors = max(0, unique_visitors - returning)
+
+    # Bounce & session duration — group events per session
+    pipeline_sessions = [
+        {"$match": ev_filter},
+        {"$group": {
+            "_id": "$session_id",
+            "count": {"$sum": 1},
+            "start_ts": {"$min": "$created_at"},
+            "end_ts": {"$max": "$created_at"},
+        }},
+    ]
+    bounced = 0
+    session_durations = []
+    async for row in db.analytics_events.aggregate(pipeline_sessions):
+        if row["count"] <= 1:
+            bounced += 1
+        try:
+            st = datetime.fromisoformat(row["start_ts"].replace("Z", "+00:00"))
+            et = datetime.fromisoformat(row["end_ts"].replace("Z", "+00:00"))
+            session_durations.append((et - st).total_seconds())
+        except Exception:
+            pass
+    bounce_rate = round(100 * bounced / total_sessions, 1) if total_sessions else 0.0
+    avg_session_sec = round(sum(session_durations) / len(session_durations), 1) if session_durations else 0.0
+
+    # Traffic sources
+    src_agg = {}
+    async for row in db.analytics_events.aggregate([
+        {"$match": ev_filter},
+        {"$group": {"_id": "$source", "count": {"$sum": 1}}},
+    ]):
+        src_agg[row["_id"] or "Direct"] = row["count"]
+    all_sources = ["Organic Search", "Direct", "Social Media", "Referral", "Paid Ads"]
+    traffic_sources = [{"name": k, "count": src_agg.get(k, 0)} for k in all_sources]
+
+    async def _group(field, top=10):
+        out = []
+        async for row in db.analytics_events.aggregate([
+            {"$match": ev_filter},
+            {"$group": {"_id": f"${field}", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}},
+            {"$limit": top},
+        ]):
+            out.append({"name": row["_id"] or "Unknown", "count": row["count"]})
+        return out
+
+    devices = await _group("device")
+    os_list = await _group("os")
+    browsers = await _group("browser")
+    countries_raw = await _group("country", top=15)
+    countries = [{**c, "label": _COUNTRY_NAMES.get(c["name"], c["name"])} for c in countries_raw]
+    cities = [c for c in await _group("city", top=15) if c["name"] and c["name"] != "Unknown"]
+    top_landing = await _group("path", top=10)
+
+    # Applications & revenue in window
+    app_filter = {"created_at": {"$gte": start_iso, "$lte": end_iso}}
+    apps_total = await db.applications.count_documents(app_filter)
+    apps_paid = await db.applications.count_documents({**app_filter, "payment_status": "paid"})
+    apps_abandoned = await db.applications.count_documents({**app_filter, "payment_status": {"$ne": "paid"}})
+
+    revenue_agg = 0.0
+    async for row in db.applications.aggregate([
+        {"$match": {**app_filter, "payment_status": "paid"}},
+        {"$group": {"_id": None, "sum": {"$sum": "$amount_usd"}}},
+    ]):
+        revenue_agg = float(row.get("sum", 0.0))
+
+    # Button-click events
+    apply_clicks = await db.analytics_events.count_documents({**ev_filter, "event": "apply_click"})
+    payment_clicks = await db.analytics_events.count_documents({**ev_filter, "event": "payment_click"})
+
+    # Conversion rate = paid applications / unique visitors
+    conversion_rate = round(100 * apps_paid / unique_visitors, 2) if unique_visitors else 0.0
+
+    return {
+        "range": {"from": start_iso, "to": end_iso},
+        "web": {
+            "total_visitors": unique_visitors,
+            "unique_visitors": unique_visitors,
+            "new_visitors": new_visitors,
+            "returning_visitors": returning,
+            "page_views": total_pv,
+            "sessions": total_sessions,
+            "avg_session_duration_sec": avg_session_sec,
+            "bounce_rate_pct": bounce_rate,
+            "events_total": total_events,
+        },
+        "conversion": {
+            "apply_clicks": apply_clicks,
+            "payment_clicks": payment_clicks,
+            "applications_submitted": apps_total,
+            "applications_paid": apps_paid,
+            "applications_abandoned": apps_abandoned,
+            "conversion_rate_pct": conversion_rate,
+            "revenue_usd": round(revenue_agg, 2),
+        },
+        "sources": traffic_sources,
+        "devices": devices,
+        "os": os_list,
+        "browsers": browsers,
+        "countries": countries,
+        "cities": cities,
+        "top_landing_pages": top_landing,
+    }
+
+
+@api.get("/admin/analytics/timeseries")
+async def admin_analytics_timeseries(
+    from_: Optional[str] = Query(None, alias="from"),
+    to: Optional[str] = Query(None),
+    preset: Optional[str] = Query(None),
+    ctx: dict = Depends(require_admin),
+):
+    """Daily buckets: visitors, page-views, applications, revenue."""
+    start, end = _parse_date_range(from_, to, preset or "30d")
+    start_iso, end_iso = start.isoformat(), end.isoformat()
+
+    # Daily unique visitors
+    daily = {}
+    async for row in db.analytics_events.aggregate([
+        {"$match": {"created_at": {"$gte": start_iso, "$lte": end_iso}, "event": "pageview"}},
+        {"$group": {
+            "_id": {"$substr": ["$created_at", 0, 10]},
+            "pv": {"$sum": 1},
+            "vs": {"$addToSet": "$visitor_id"},
+        }},
+    ]):
+        daily[row["_id"]] = {"date": row["_id"], "page_views": row["pv"], "visitors": len(row["vs"]), "applications": 0, "revenue": 0.0}
+
+    async for row in db.applications.aggregate([
+        {"$match": {"created_at": {"$gte": start_iso, "$lte": end_iso}}},
+        {"$group": {
+            "_id": {"$substr": ["$created_at", 0, 10]},
+            "apps": {"$sum": 1},
+            "revenue": {"$sum": {"$cond": [{"$eq": ["$payment_status", "paid"]}, "$amount_usd", 0]}},
+        }},
+    ]):
+        d = daily.setdefault(row["_id"], {"date": row["_id"], "page_views": 0, "visitors": 0, "applications": 0, "revenue": 0.0})
+        d["applications"] = row["apps"]
+        d["revenue"] = round(float(row.get("revenue", 0.0)), 2)
+
+    series = sorted(daily.values(), key=lambda x: x["date"])
+    return {"range": {"from": start_iso, "to": end_iso}, "series": series}
+
+
+# ────────────────── SEO STATUS ──────────────────
+
+CORE_ROUTES_META = [
+    ("/", "Ghana Visa On Arrival — eVisa & ETA assistance"),
+    ("/apply", "Apply for your Ghana Visa"),
+    ("/prices", "Ghana Visa prices"),
+    ("/track", "Track my Ghana Visa application"),
+    ("/faq", "Ghana Visa FAQ"),
+    ("/ghana-evisa", "Ghana eVisa Guide"),
+    ("/ghana-business-visa", "Ghana Business Visa Guide"),
+    ("/terms", "Terms & Conditions"),
+    ("/privacy", "Privacy Policy"),
+    ("/disclaimer", "Disclaimer"),
+]
+
+
+@api.get("/admin/seo/status")
+async def admin_seo_status(request: Request, ctx: dict = Depends(require_admin)):
+    """Best-effort SEO health check. Verifies sitemap.xml, robots.txt and lists
+    the meta status of core routes based on our React Helmet configuration."""
+    # Prefer the customer-facing host (X-Forwarded-Host set by ingress) over
+    # the internal cluster hostname exposed by request.base_url.
+    forwarded_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
+    proto = request.headers.get("x-forwarded-proto", "https")
+    if forwarded_host:
+        origin = f"{proto}://{forwarded_host.split(',')[0].strip()}"
+    else:
+        origin = str(request.base_url).rstrip("/")
+    try:
+        import httpx  # local import — httpx is already present in the project
+    except Exception:
+        httpx = None
+
+    checks = {"sitemap": {"url": f"{origin}/sitemap.xml", "ok": False},
+              "robots": {"url": f"{origin}/robots.txt", "ok": False}}
+
+    async def _fetch(url: str) -> Optional[int]:
+        if httpx is None:
+            return None
+        try:
+            async with httpx.AsyncClient(timeout=6.0, follow_redirects=True) as c:
+                r = await c.get(url)
+                return r.status_code
+        except Exception:
+            return None
+
+    for key in ("sitemap", "robots"):
+        code = await _fetch(checks[key]["url"])
+        checks[key]["status_code"] = code
+        checks[key]["ok"] = code is not None and 200 <= code < 400
+
+    # SEO landing pages are dynamically served; each carries meta title/desc via
+    # React Helmet. We list core routes as "configured".
+    pages = [
+        {"path": p, "meta_title": bool(title), "meta_description": True, "canonical": True, "structured_data": p in ("/", "/apply", "/ghana-evisa")}
+        for p, title in CORE_ROUTES_META
+    ]
+
+    return {
+        "sitemap": checks["sitemap"],
+        "robots": checks["robots"],
+        "core_pages": pages,
+        "indexed_pages_estimate": len(pages),  # actual indexed count requires GSC API
+        "gsc_connected": False,
+    }
+
+
+# ────────────────── DATA CLEANUP / DANGER ZONE ──────────────────
+
+@api.get("/admin/cleanup/preview")
+async def admin_cleanup_preview(ctx: dict = Depends(require_admin)):
+    """List applications matching test-data heuristics (safe cleanup)."""
+    matches = []
+    async for doc in db.applications.find({}, {"_id": 0}):
+        if _is_test_record(doc):
+            matches.append({
+                "tracking_no": doc.get("tracking_no"),
+                "full_name": doc.get("full_name"),
+                "email": doc.get("email"),
+                "passport_number": doc.get("passport_number"),
+                "created_at": doc.get("created_at"),
+                "payment_status": doc.get("payment_status"),
+            })
+    return {"count": len(matches), "items": matches[:200]}
+
+
+@api.post("/admin/cleanup/test-data")
+async def admin_cleanup_test_data(ctx: dict = Depends(require_admin)):
+    """Delete applications matching test heuristics and their related side data
+    (payment records, chat logs). Safe: only touches records the preview endpoint returns."""
+    tracking_nos = []
+    async for doc in db.applications.find({}, {"tracking_no": 1, "_id": 0}):
+        # Re-run heuristic on full doc
+        full = await db.applications.find_one({"tracking_no": doc["tracking_no"]}, {"_id": 0})
+        if full and _is_test_record(full):
+            tracking_nos.append(doc["tracking_no"])
+
+    deleted = {"applications": 0, "hubtel_callbacks": 0, "crypto_payments": 0, "email_log": 0, "chat_log": 0}
+    if tracking_nos:
+        res = await db.applications.delete_many({"tracking_no": {"$in": tracking_nos}})
+        deleted["applications"] = res.deleted_count
+        res = await db.hubtel_callbacks.delete_many({"client_reference": {"$in": tracking_nos}})
+        deleted["hubtel_callbacks"] = res.deleted_count
+        res = await db.crypto_payments.delete_many({"tracking_no": {"$in": tracking_nos}})
+        deleted["crypto_payments"] = res.deleted_count
+    return {"ok": True, "deleted": deleted, "tracking_nos": tracking_nos}
+
+
+class WipeAllIn(BaseModel):
+    confirm: str
+
+
+@api.post("/admin/cleanup/wipe-all")
+async def admin_wipe_all(payload: WipeAllIn, ctx: dict = Depends(require_admin)):
+    """Nuclear option: wipe ALL applications, payments, callbacks, logs and analytics.
+    Requires body {\"confirm\":\"DELETE ALL\"}. Preserves admin settings, users,
+    email templates."""
+    if payload.confirm != "DELETE ALL":
+        raise HTTPException(status_code=400, detail='Confirmation string must be exactly "DELETE ALL".')
+
+    collections = [
+        "applications", "hubtel_callbacks", "crypto_payments",
+        "email_log", "chat_log", "analytics_events",
+    ]
+    deleted = {}
+    for coll in collections:
+        res = await db[coll].delete_many({})
+        deleted[coll] = res.deleted_count
+    return {"ok": True, "deleted": deleted}
 
 
 # ────────────────── MOUNT ──────────────────

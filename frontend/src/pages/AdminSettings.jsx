@@ -12,7 +12,7 @@ const AI_MODELS = [
     "gemini-3-flash-preview",
 ];
 
-const SEC = { prices: "Visa Prices", types: "Visa Types", methods: "Payment Methods", hubtel: "Hubtel API", nowpayments: "NowPayments (USDT)", other: "WhatsApp & AI" };
+const SEC = { prices: "Visa Prices", types: "Visa Types", methods: "Payment Methods", hubtel: "Hubtel API", nowpayments: "NowPayments (USDT)", other: "WhatsApp & AI", analytics: "Analytics IDs", danger: "Danger Zone" };
 
 export default function AdminSettings() {
     const [tab, setTab] = useState("prices");
@@ -129,6 +129,8 @@ export default function AdminSettings() {
                         </Card>
                     </>
                 )}
+                {tab === "analytics" && <AnalyticsIdsForm initial={s} onReload={reload} />}
+                {tab === "danger" && <DangerZone onReload={reload} />}
             </div>
         </div>
     );
@@ -337,3 +339,121 @@ const NowPaymentsForm = ({ initial, onSave, onTest, discountPct, onSaveDiscount 
     );
 };
 
+
+
+const AnalyticsIdsForm = ({ initial, onReload }) => {
+    const [f, setF] = useState({
+        ga4_measurement_id: initial?.ga4_measurement_id || "",
+        gsc_verification: initial?.gsc_verification || "",
+        clarity_project_id: initial?.clarity_project_id || "",
+    });
+    const set = (k, v) => setF((old) => ({ ...old, [k]: v }));
+    const save = async () => {
+        try {
+            await api.post("/admin/settings/analytics-ids", f);
+            toast.success("Analytics IDs saved");
+            onReload();
+        } catch (e) { toast.error(e?.response?.data?.detail || "Save failed"); }
+    };
+    const rows = [
+        { k: "ga4_measurement_id", label: "Google Analytics 4 — Measurement ID", ph: "G-XXXXXXXXXX", note: "Found in Google Analytics → Admin → Data Streams. GA4 loads only after user accepts Analytics cookies." },
+        { k: "gsc_verification", label: "Google Search Console — verification code", ph: "abcdef123456...", note: "Copy the content value from the HTML meta-tag verification method in GSC. Injected as a passive <meta> tag (not a cookie)." },
+        { k: "clarity_project_id", label: "Microsoft Clarity — Project ID", ph: "abcdef1234", note: "From Clarity dashboard → Settings → Setup. Loads only after user accepts Analytics cookies." },
+    ];
+    return (
+        <div className="bg-white rounded-xl border border-black/10 p-6 space-y-5">
+            <div className="font-heading font-semibold">Analytics &amp; SEO integrations</div>
+            <p className="text-xs text-slate-500 -mt-2">Paste your IDs below. Scripts are loaded on the public site only after the visitor accepts the Analytics cookie category (GDPR-compliant).</p>
+            {rows.map((r) => (
+                <div key={r.k}>
+                    <label className="text-xs uppercase tracking-wider text-slate-600 font-medium">{r.label}</label>
+                    <input value={f[r.k]} onChange={(e) => set(r.k, e.target.value)} data-testid={`analytics-${r.k}`} placeholder={r.ph}
+                        className="mt-1.5 w-full border border-black/10 rounded-md px-3 py-2.5 text-sm focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none font-mono" />
+                    <div className="text-[11px] text-slate-500 mt-1">{r.note}</div>
+                </div>
+            ))}
+            <button onClick={save} data-testid="analytics-ids-save" className="bg-ghana-green text-white px-5 py-2.5 rounded-md text-sm font-medium inline-flex items-center gap-2 hover:bg-ghana-green-dark"><Save size={14} /> Save analytics IDs</button>
+        </div>
+    );
+};
+
+const DangerZone = ({ onReload }) => {
+    const [preview, setPreview] = useState(null);
+    const [confirmWipe, setConfirmWipe] = useState("");
+    const [busy, setBusy] = useState(false);
+
+    const runPreview = async () => {
+        setBusy(true);
+        try {
+            const { data } = await api.get("/admin/cleanup/preview");
+            setPreview(data);
+        } catch (e) { toast.error(e?.response?.data?.detail || "Preview failed"); }
+        finally { setBusy(false); }
+    };
+    const runCleanTests = async () => {
+        if (!window.confirm(`Delete ${preview?.count ?? "?"} test applications and their payment/log records? This cannot be undone.`)) return;
+        setBusy(true);
+        try {
+            const { data } = await api.post("/admin/cleanup/test-data");
+            toast.success(`Removed ${data.deleted.applications} test applications`);
+            setPreview(null); onReload();
+        } catch (e) { toast.error(e?.response?.data?.detail || "Cleanup failed"); }
+        finally { setBusy(false); }
+    };
+    const runWipeAll = async () => {
+        if (confirmWipe !== "DELETE ALL") { toast.error('Type exactly "DELETE ALL" to confirm.'); return; }
+        setBusy(true);
+        try {
+            const { data } = await api.post("/admin/cleanup/wipe-all", { confirm: confirmWipe });
+            const total = Object.values(data.deleted).reduce((a, b) => a + b, 0);
+            toast.success(`Wiped ${total} records across ${Object.keys(data.deleted).length} collections`);
+            setConfirmWipe(""); setPreview(null); onReload();
+        } catch (e) { toast.error(e?.response?.data?.detail || "Wipe failed"); }
+        finally { setBusy(false); }
+    };
+
+    return (
+        <div className="space-y-5">
+            <div className="bg-white border border-ghana-gold/50 rounded-xl p-6 space-y-4">
+                <div>
+                    <div className="font-heading font-semibold text-lg text-ghana-black">Safe cleanup — test applications only</div>
+                    <p className="text-xs text-slate-600 mt-1">Removes applications matching test heuristics (obvious dummy emails/names/passport numbers). Preview first, then confirm. Admin settings, email templates and user accounts are preserved.</p>
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                    <button onClick={runPreview} disabled={busy} data-testid="cleanup-preview" className="border border-black/10 px-4 py-2 rounded-md text-sm hover:bg-slate-50">Preview test records</button>
+                    <button onClick={runCleanTests} disabled={busy || !preview || preview.count === 0} data-testid="cleanup-run" className="bg-ghana-gold text-ghana-black px-4 py-2 rounded-md text-sm font-medium hover:bg-ghana-gold/90 disabled:opacity-40">Delete {preview?.count ?? "…"} test records</button>
+                </div>
+                {preview && (
+                    <div className="mt-2 border border-black/10 rounded-lg overflow-hidden">
+                        <div className="bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-widest">{preview.count} matches</div>
+                        <div className="max-h-72 overflow-y-auto">
+                            {preview.items.length === 0 && <div className="p-6 text-center text-sm text-slate-500">No test-looking records found. Clean!</div>}
+                            {preview.items.map((it) => (
+                                <div key={it.tracking_no} className="grid grid-cols-[110px_1fr_1fr] gap-2 px-3 py-2 text-xs border-t border-slate-100">
+                                    <span className="font-mono text-ghana-black">{it.tracking_no}</span>
+                                    <span className="truncate">{it.full_name}</span>
+                                    <span className="truncate text-slate-500">{it.email}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            <div className="bg-white border-2 border-ghana-red rounded-xl p-6 space-y-4">
+                <div>
+                    <div className="font-heading font-semibold text-lg text-ghana-red">Nuclear cleanup — wipe everything</div>
+                    <p className="text-xs text-slate-600 mt-1">Deletes <strong>all</strong> applications, payment records, callbacks, email logs, chat sessions and analytics events. Only use this once before go-live or if instructed. Admin accounts, visa prices, email templates and integration keys remain intact.</p>
+                </div>
+                <div>
+                    <label className="text-xs uppercase tracking-wider text-slate-600 font-medium">Type <code className="bg-slate-100 px-1.5 py-0.5 rounded">DELETE ALL</code> to confirm</label>
+                    <div className="flex gap-2 mt-1.5">
+                        <input value={confirmWipe} onChange={(e) => setConfirmWipe(e.target.value)} data-testid="danger-confirm" placeholder="DELETE ALL"
+                            className="flex-1 border border-ghana-red/40 rounded-md px-3 py-2.5 text-sm focus:border-ghana-red focus:ring-1 focus:ring-ghana-red outline-none font-mono" />
+                        <button onClick={runWipeAll} disabled={busy || confirmWipe !== "DELETE ALL"} data-testid="danger-wipe" className="bg-ghana-red text-white px-5 py-2.5 rounded-md text-sm font-medium hover:brightness-110 disabled:opacity-40">Wipe all data</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};

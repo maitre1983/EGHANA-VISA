@@ -59,6 +59,38 @@ Build a full-stack Ghana Visa On Arrival web application for **eghanavisa.com** 
 - Return URL (customer redirect after payment, display-only): `https://eghanavisa.com/payment/return`
 - Cancellation URL (customer clicks cancel): `https://eghanavisa.com/payment/cancelled`
 
+## Iteration 14 (2026-02-08) — Cookie Consent, Analytics & SEO Dashboard, Test-Data Cleanup
+
+### 1. Cookie Consent (GDPR)
+- ✅ Bottom banner + Customize modal on first visit — Accept All / Reject Non-Essential / Save preferences.
+- ✅ 4 categories: **Essential** (locked ON), **Analytics**, **Marketing**, **Functional** — all OFF by default until user opts in.
+- ✅ Choice persisted to `localStorage["egv_cookie_consent_v1"]`; footer "Cookie preferences" link reopens modal.
+- ✅ Emits `egv:consent-changed` event so analytics + external scripts can react in real time.
+
+### 2. Native Analytics + External integrations
+- ✅ First-party analytics stored in MongoDB collection `analytics_events`.
+- ✅ Public `POST /api/analytics/track` — parses UA (device/OS/browser), classifies source (Organic/Social/Referral/Direct/Paid), captures country from CDN headers, UTM params, referrer.
+- ✅ Client tracker (`/app/frontend/src/lib/analytics.js`) only fires when Analytics cookies are accepted.
+- ✅ Route-change page-view emitter via `useAnalyticsRouter` in PublicLayout.
+- ✅ Explicit funnel events wired: `apply_click` on Home visa cards, `payment_click` on Hubtel + USDT buttons.
+- ✅ Admin endpoints:
+    - `GET /api/admin/analytics/summary?preset=…` — KPIs, sources, devices, countries, funnel.
+    - `GET /api/admin/analytics/timeseries?preset=…` — daily buckets (visitors/PVs/apps/revenue).
+    - `GET /api/analytics/public-config` — returns GA4 + Clarity + GSC IDs to load in the frontend.
+- ✅ New Admin Settings section **Analytics IDs** — configure GA4 Measurement ID, GSC verification, Microsoft Clarity Project ID. Scripts injected only after Analytics consent (GDPR-compliant).
+- ✅ Overhauled `/admin/analytics` page (React + Recharts): KPI cards, line/bar/pie charts, conversion funnel, date presets (Today / Yesterday / 7d / 30d / 90d / This year / All time) + custom range, tabs (Overview / Traffic / Visitors / SEO).
+
+### 3. SEO Status Dashboard
+- ✅ `GET /api/admin/seo/status` — pings sitemap.xml + robots.txt, returns HTTP codes, lists core routes meta status. Prefers `X-Forwarded-Host` so preview points to public URL.
+- ✅ Dashboard shows technical health (sitemap ✅, robots ✅, GSC connect, GA4 connect), core pages meta table (title / description / canonical / structured data), indexed-pages estimate + placeholder for GSC search performance.
+
+### 4. Test Data Cleanup + Danger Zone
+- ✅ `GET /api/admin/cleanup/preview` — lists applications matching test-heuristics (email `@example.com`, name starts with `TEST`, dummy passport prefixes).
+- ✅ `POST /api/admin/cleanup/test-data` — deletes matched applications + their hubtel_callbacks + crypto_payments.
+- ✅ `POST /api/admin/cleanup/wipe-all` — nuclear option, requires body `{"confirm":"DELETE ALL"}`. Wipes applications, hubtel_callbacks, crypto_payments, email_log, chat_log, analytics_events. Preserves admin_users, settings, email_templates.
+- ✅ New "Danger Zone" tab in Admin Settings — preview button + safe-cleanup + red "DELETE ALL" nuclear input.
+- ✅ **Preview DB cleaned**: 47 test applications, 15 crypto payments, 1 hubtel callback, 69 email log entries, 17 chat sessions removed. 3 real-looking customer records preserved.
+
 ## User personas
 1. **Traveller** (any nationality except 16 ECOWAS) — fills form, uploads docs, pays by Visa, tracks status, receives visa by email.
 2. **Admin / Operator** — logs in at /admin, reviews applications, downloads documents, transitions status, tunes prices/toggles/keys.
