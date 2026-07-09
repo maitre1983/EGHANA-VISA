@@ -1,10 +1,13 @@
-"""Hubtel Online Checkout integration with SANDBOX simulation mode.
+"""Hubtel Online Checkout integration.
 
-Configuration is read from the `settings` collection (Hubtel section). If any of
-the required keys are missing, the service operates in SANDBOX mode and returns
-a mock checkout URL. This is safe until real credentials are set.
+Configuration is fully driven by the admin settings collection. The admin
+dashboard controls sandbox vs. production mode via the explicit `sandbox`
+boolean — there is NO silent fallback to sandbox when credentials are
+missing. When production mode is selected without the required credentials
+the service surfaces a clear `HubtelNotConfiguredError` so the caller can
+show a helpful message to admins/customers instead of quietly downgrading
+real payments to a mock checkout.
 """
-import os
 import uuid
 import logging
 import requests
@@ -12,6 +15,19 @@ import requests
 logger = logging.getLogger(__name__)
 
 HUBTEL_CHECKOUT_URL = "https://payproxyapi.hubtel.com/items/initiate"
+REQUIRED_LIVE_FIELDS = ("api_id", "api_key", "merchant_account_id")
+
+
+class HubtelNotConfiguredError(RuntimeError):
+    """Raised when production mode is selected but credentials are missing."""
+
+    def __init__(self, missing: list[str]):
+        self.missing = missing
+        super().__init__(
+            "Hubtel is set to PRODUCTION but the following required fields are "
+            "empty in Admin Settings → Hubtel API: " + ", ".join(missing) +
+            ". Please fill them in (or switch Hubtel back to Sandbox) and save."
+        )
 
 
 def _proxies_from(config: dict) -> dict | None:
@@ -23,23 +39,42 @@ def _proxies_from(config: dict) -> dict | None:
 
 
 def is_sandbox(config: dict) -> bool:
-    if config.get("sandbox", True):
-        return True
-    required = ("api_id", "api_key", "merchant_account_id")
-    return not all((config.get(k) or "").strip() for k in required)
+    """Strictly reflect the admin-configured mode. No implicit fallback."""
+    return bool(config.get("sandbox", True))
+
+
+def missing_live_fields(config: dict) -> list[str]:
+    """List Hubtel credential fields that are empty. Only meaningful when
+    admin has switched sandbox=false."""
+    return [f for f in REQUIRED_LIVE_FIELDS if not str(config.get(f) or "").strip()]
+
+
+def is_ready_for_live(config: dict) -> bool:
+    """True when admin has selected production mode AND all required
+    credentials are present. Used by the public /api/config endpoint so the
+    frontend can show a clear 'not configured' warning if needed."""
+    return not is_sandbox(config) and not missing_live_fields(config)
 
 
 def initiate_checkout(config: dict, amount: float, description: str, tracking_no: str) -> dict:
-    """Return {"checkout_url": str, "transaction_id": str, "sandbox": bool}."""
+    """Return {"checkout_url": str, "transaction_id": str, "sandbox": bool}.
+
+    Raises HubtelNotConfiguredError when production mode is selected but any
+    required credential field is empty."""
     tx_id = f"TX-{uuid.uuid4().hex[:10].upper()}"
 
     if is_sandbox(config):
-        logger.info(f"Hubtel SANDBOX: simulated checkout for {tracking_no} amount={amount}")
+        logger.info(f"Hubtel SANDBOX (admin-selected): simulated checkout for {tracking_no} amount={amount}")
         return {
             "checkout_url": f"/payment/sandbox?tx={tx_id}&tracking={tracking_no}",
             "transaction_id": tx_id,
             "sandbox": True,
         }
+
+    # Production mode — validate credentials strictly, do NOT fall back to sandbox.
+    missing = missing_live_fields(config)
+    if missing:
+        raise HubtelNotConfiguredError(missing)
 
     payload = {
         "totalAmount": round(amount, 2),

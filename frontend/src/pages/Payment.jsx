@@ -30,7 +30,13 @@ export default function Payment() {
             if (data.sandbox) setSandboxTx(data);
             else window.location.href = data.checkout_url;
         } catch (e) {
-            toast.error(e?.response?.data?.detail || "Payment initiation failed");
+            const detail = e?.response?.data?.detail;
+            // Structured error from backend when Hubtel is set to production but keys are missing
+            if (detail && typeof detail === "object" && detail.code === "hubtel_not_configured") {
+                toast.error("Payment gateway is not fully configured. Please contact support.", { duration: 6000 });
+            } else {
+                toast.error(typeof detail === "string" ? detail : (detail?.message || "Payment initiation failed"));
+            }
         } finally { setLoading(false); }
     };
 
@@ -87,6 +93,12 @@ export default function Payment() {
                     <ShieldCheck size={16} /> Payment gateway in <strong>SANDBOX</strong> mode. No real charges.
                 </div>
             )}
+            {config && !config.hubtel_sandbox && !config.hubtel_ready && (
+                <div className="mt-6 bg-ghana-red/10 border border-ghana-red text-ghana-red rounded-md px-4 py-3 text-sm" data-testid="payment-not-configured-banner">
+                    <div className="font-semibold">Payment gateway not fully configured</div>
+                    <div className="mt-1">Card payments are temporarily unavailable. Please contact support or try USDT below.</div>
+                </div>
+            )}
 
             {/* If a crypto payment is active, show the deposit panel */}
             {crypto ? (
@@ -103,7 +115,7 @@ export default function Payment() {
                                     <div className="text-xs text-slate-500">Secure card checkout · SSL encrypted</div>
                                 </div>
                             </div>
-                            <button onClick={startPayment} disabled={!hubtelActive || loading} data-testid="payment-hubtel-btn"
+                            <button onClick={startPayment} disabled={!hubtelActive || loading || (config && !config.hubtel_sandbox && !config.hubtel_ready)} data-testid="payment-hubtel-btn"
                                 className="bg-ghana-green text-white px-6 py-2.5 rounded-md text-sm font-medium hover:bg-ghana-green-dark transition-colors disabled:opacity-50 inline-flex items-center gap-2">
                                 {loading ? <Loader2 className="animate-spin" size={14} /> : null} Pay now
                             </button>

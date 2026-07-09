@@ -206,6 +206,17 @@ const HubtelForm = ({ initial, onSave }) => {
             <ToggleRow active={f.sandbox} onChange={(v) => set("sandbox", v)} testid="hubtel-sandbox" />
             <div className="text-xs text-slate-500 -mt-2">Sandbox mode simulates payments. Turn off once real API keys are configured below.</div>
 
+            {/* Explicit warning when admin has picked PRODUCTION but credentials are missing */}
+            {!f.sandbox && (["api_id", "api_key", "merchant_account_id"].some((k) => !String(f[k] || "").trim())) && (
+                <div className="bg-ghana-red/10 border border-ghana-red text-ghana-red rounded-md px-4 py-3 text-sm" data-testid="hubtel-missing-warning">
+                    <div className="font-semibold">⚠ Production mode is ON but Hubtel credentials are incomplete</div>
+                    <div className="mt-1 text-xs">
+                        Missing: <strong>{["api_id", "api_key", "merchant_account_id"].filter((k) => !String(f[k] || "").trim()).join(", ")}</strong>.
+                        Card payments will return HTTP 503 to customers until these are filled in — no silent sandbox fallback.
+                    </div>
+                </div>
+            )}
+
             <div className="border-t border-black/5 pt-4">
                 <div className="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-2">Production URLs — copy these into your Hubtel dashboard</div>
                 {[

@@ -134,6 +134,21 @@ Build a full-stack Ghana Visa On Arrival web application for **eghanavisa.com** 
 - ✅ Signed-URL endpoint returns clean fallback (`{url:null, streaming_endpoint:...}`) for legacy files.
 - ⏳ End-to-end R2 upload + signed-URL download waiting on the user to paste real Cloudflare R2 credentials.
 
+## Iteration 16 (2026-02-08) — Hubtel silent-sandbox-fallback bug fix
+- **Reported**: on production eghanavisa.com the payment page showed *"Payment gateway in SANDBOX mode"* and opened *"Hubtel Sandbox Checkout"* even though the admin had switched Hubtel to production mode and pasted keys.
+- **Root cause**: `hubtel_service.is_sandbox()` had a silent fallback — if `sandbox=false` **but any of `api_id/api_key/merchant_account_id` was empty**, it still returned `True`. So any single missing/mistyped field silently downgraded real payments to a mock checkout, with no visible admin warning.
+- **Fix (strictly admin-controlled)**:
+    - `is_sandbox()` now returns exactly `bool(config.sandbox)`. No implicit fallback.
+    - New `HubtelNotConfiguredError` raised when production mode is selected without full credentials.
+    - `POST /api/payments/initiate` catches it and returns **HTTP 503** with structured detail `{code:"hubtel_not_configured", message, missing_fields}` — never a sandbox mock URL.
+    - `GET /api/config` now exposes `hubtel_ready` + `hubtel_missing_fields` so the frontend renders a red "not fully configured" banner instead of the yellow sandbox banner when the admin has left production incomplete.
+    - **Admin Settings → Hubtel tab** shows a red warning card the moment `sandbox=OFF` but any required field is empty, listing exactly which fields are missing.
+    - "Pay now" button is disabled in the not-configured state so customers cannot hit a 503.
+- **Verified via curl (all three scenarios)**:
+    - Sandbox ON → `hubtel_sandbox=True, hubtel_ready=False`, checkout returns sandbox URL (expected).
+    - Production ON + keys empty → `hubtel_sandbox=False, hubtel_ready=False, missing=[api_id, api_key, merchant_account_id]`. `/payments/initiate` returns 503 `hubtel_not_configured`. NO sandbox fallback.
+    - Production ON + all keys → `hubtel_sandbox=False, hubtel_ready=True, missing=[]`. Real Hubtel endpoint used.
+
 ## User personas
 1. **Traveller** (any nationality except 16 ECOWAS) — fills form, uploads docs, pays by Visa, tracks status, receives visa by email.
 2. **Admin / Operator** — logs in at /admin, reviews applications, downloads documents, transitions status, tunes prices/toggles/keys.

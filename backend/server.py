@@ -24,7 +24,13 @@ from storage_service import (
     detect_environment as _detect_env,
 )
 from email_service import EmailService
-from hubtel_service import initiate_checkout, is_sandbox
+from hubtel_service import (
+    initiate_checkout,
+    is_sandbox,
+    is_ready_for_live as _hubtel_ready,
+    missing_live_fields as _hubtel_missing,
+    HubtelNotConfiguredError,
+)
 from ama_chat import ask_ama
 import nowpayments_service as nowp
 from seed_data import DEFAULT_SETTINGS, DEFAULT_EMAIL_TEMPLATES, EMAIL_TEMPLATES_VERSION, OBSOLETE_VISA_CODES
@@ -240,13 +246,16 @@ async def public_config():
     """Config exposed to the public site (safe fields only)."""
     s = await get_settings()
     np_cfg = s.get("nowpayments", {})
+    h_cfg = s.get("hubtel", {})
     return {
         "visa_types": s.get("visa_types", []),
         "payment_methods": s.get("payment_methods", []),
         "express_surcharge_usd": s.get("express_surcharge_usd", 50.0),
         "max_upload_mb": s.get("max_upload_mb", 8),
         "whatsapp_admin": s.get("whatsapp_admin", ""),
-        "hubtel_sandbox": is_sandbox(s.get("hubtel", {})),
+        "hubtel_sandbox": is_sandbox(h_cfg),
+        "hubtel_ready": _hubtel_ready(h_cfg),
+        "hubtel_missing_fields": [] if is_sandbox(h_cfg) else _hubtel_missing(h_cfg),
         "nowpayments_configured": nowp.is_configured(np_cfg),
         "nowpayments_sandbox": bool(np_cfg.get("sandbox", True)),
         "usdt_discount_pct": float(s.get("usdt_discount_pct", 0.0)),
@@ -413,12 +422,21 @@ async def payment_initiate(payload: PayInit):
         raise HTTPException(status_code=400, detail="Application already paid")
 
     settings = await get_settings()
-    result = initiate_checkout(
-        settings.get("hubtel", {}),
-        amount=app_doc["amount_usd"],
-        description=f"Ghana Visa {app_doc['visa_name']} - {app_doc['tracking_no']}",
-        tracking_no=app_doc["tracking_no"],
-    )
+    try:
+        result = initiate_checkout(
+            settings.get("hubtel", {}),
+            amount=app_doc["amount_usd"],
+            description=f"Ghana Visa {app_doc['visa_name']} - {app_doc['tracking_no']}",
+            tracking_no=app_doc["tracking_no"],
+        )
+    except HubtelNotConfiguredError as e:
+        # Do NOT silently fall back to sandbox. Surface a clear error so the
+        # frontend can tell the customer/admin what to do.
+        raise HTTPException(status_code=503, detail={
+            "code": "hubtel_not_configured",
+            "message": str(e),
+            "missing_fields": e.missing,
+        })
     await db.applications.update_one(
         {"tracking_no": payload.tracking_no},
         {"$set": {"payment_transaction_id": result["transaction_id"], "updated_at": now_iso()}},
