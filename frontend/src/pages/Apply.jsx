@@ -115,7 +115,7 @@ export default function Apply() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
             <div className="mb-8">
                 <div className="text-xs uppercase tracking-[0.25em] text-ghana-green font-semibold">Application</div>
-                <h1 className="mt-2 text-3xl md:text-4xl font-heading font-bold">Ghana Visa On Arrival Form</h1>
+                <h1 className="mt-2 text-3xl md:text-4xl font-heading font-bold">Ghana eVisa &amp; ETA Application</h1>
                 <p className="mt-3 text-slate-600">All fields and documents are <span className="font-semibold text-ghana-red">mandatory</span>. Documents must be JPEG, PNG or PDF (max {config?.max_upload_mb || 8} MB each).</p>
                 <div className="mt-4 text-xs text-slate-500 bg-slate-50 border border-black/5 rounded-md px-3 py-2" data-testid="apply-compliance-disclaimer">
                     <strong>Independent third-party assistance:</strong> eGhanaVisa.com is not affiliated with the Government of Ghana, the Ghana Immigration Service or the Ministry of Foreign Affairs. We assist eligible travellers with Ghana Electronic Visa (eVisa) and ETA applications.
