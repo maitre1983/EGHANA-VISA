@@ -7,6 +7,8 @@ import PublicLayout from "./components/PublicLayout";
 import Home from "./pages/Home";
 import Apply from "./pages/Apply";
 import Payment from "./pages/Payment";
+import PaymentReturn from "./pages/PaymentReturn";
+import PaymentCancelled from "./pages/PaymentCancelled";
 import Success from "./pages/Success";
 import Track from "./pages/Track";
 import Prices from "./pages/Prices";
@@ -32,6 +34,8 @@ function App() {
                     <Route element={<PublicLayout />}>
                         <Route path="/" element={<Home />} />
                         <Route path="/apply" element={<Apply />} />
+                        <Route path="/payment/return" element={<PaymentReturn />} />
+                        <Route path="/payment/cancelled" element={<PaymentCancelled />} />
                         <Route path="/payment/:tracking" element={<Payment />} />
                         <Route path="/success/:tracking" element={<Success />} />
                         <Route path="/track" element={<Track />} />

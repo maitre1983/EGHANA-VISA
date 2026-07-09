@@ -45,6 +45,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "merchant_account_id": "",
         "callback_url": "",
         "return_url": "",
+        "cancellation_url": "",
         "outbound_proxy_url": "",
     },
     "nowpayments": DEFAULT_NOWPAYMENTS,

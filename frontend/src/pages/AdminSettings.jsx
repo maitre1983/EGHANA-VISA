@@ -188,20 +188,51 @@ const ToggleRow = ({ active, disabled, onChange, testid }) => (
     </label>
 );
 
-const HubtelForm = ({ initial, onSave }) => {    const [f, setF] = useState(initial);
+const HubtelForm = ({ initial, onSave }) => {
+    const [f, setF] = useState(initial);
     const set = (k, v) => setF((old) => ({ ...old, [k]: v }));
+    const base = (process.env.REACT_APP_BACKEND_URL || window.location.origin).replace(/\/$/, "");
+    const officialCallback = `${base}/api/webhooks/hubtel`;
+    const officialReturn = `${base}/payment/return`;
+    const officialCancel = `${base}/payment/cancelled`;
+    const copy = (v) => { navigator.clipboard.writeText(v); toast.success("Copied"); };
+
     return (
         <div className="bg-white rounded-xl border border-black/10 p-6 space-y-4">
             <div className="font-heading font-semibold">Hubtel Configuration</div>
             <ToggleRow active={f.sandbox} onChange={(v) => set("sandbox", v)} testid="hubtel-sandbox" />
             <div className="text-xs text-slate-500 -mt-2">Sandbox mode simulates payments. Turn off once real API keys are configured below.</div>
-            <div className="grid md:grid-cols-2 gap-4">
+
+            <div className="border-t border-black/5 pt-4">
+                <div className="text-xs uppercase tracking-widest text-slate-500 font-semibold mb-2">Production URLs — copy these into your Hubtel dashboard</div>
+                {[
+                    ["Callback URL (server-to-server)", officialCallback, "hubtel-official-callback"],
+                    ["Return URL (customer redirect after payment)", officialReturn, "hubtel-official-return"],
+                    ["Cancellation URL (customer clicks cancel)", officialCancel, "hubtel-official-cancel"],
+                ].map(([label, val, tid]) => (
+                    <div key={tid} className="mb-3">
+                        <div className="text-[11px] uppercase tracking-wider text-slate-600 font-medium">{label}</div>
+                        <div className="flex gap-2 mt-1">
+                            <input readOnly value={val} data-testid={tid}
+                                className="flex-1 bg-slate-50 border border-black/10 rounded-md px-3 py-2 text-xs font-mono text-slate-700" />
+                            <button type="button" onClick={() => copy(val)} className="border border-black/10 px-3 py-2 rounded-md text-xs hover:bg-slate-50">Copy</button>
+                        </div>
+                    </div>
+                ))}
+                <div className="text-[11px] text-slate-500 mt-1">
+                    <strong>Callback URL</strong> is a secure backend endpoint used only for Hubtel → server payment notifications. It is what updates the application status after payment.<br />
+                    <strong>Return URL</strong> is the customer-facing page shown after checkout — display only, does <em>not</em> change payment state.
+                </div>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-4 border-t border-black/5 pt-4">
                 {[
                     ["api_id", "API ID"],
                     ["api_key", "API Key"],
                     ["merchant_account_id", "Merchant Account ID"],
-                    ["callback_url", "Callback URL"],
-                    ["return_url", "Return URL"],
+                    ["callback_url", "Callback URL (paste from above)"],
+                    ["return_url", "Return URL (paste from above)"],
+                    ["cancellation_url", "Cancellation URL (paste from above)"],
                 ].map(([k, label]) => (
                     <div key={k}>
                         <label className="text-xs uppercase tracking-wider text-slate-600 font-medium">{label}</label>
@@ -210,7 +241,17 @@ const HubtelForm = ({ initial, onSave }) => {    const [f, setF] = useState(init
                     </div>
                 ))}
             </div>
-            <button onClick={() => onSave(f)} data-testid="hubtel-save" className="bg-ghana-green text-white px-5 py-2.5 rounded-md text-sm font-medium inline-flex items-center gap-2 hover:bg-ghana-green-dark"><Save size={14} /> Save Hubtel</button>
+            <div className="flex gap-2 flex-wrap">
+                <button onClick={() => onSave(f)} data-testid="hubtel-save" className="bg-ghana-green text-white px-5 py-2.5 rounded-md text-sm font-medium inline-flex items-center gap-2 hover:bg-ghana-green-dark"><Save size={14} /> Save Hubtel</button>
+                <button
+                    type="button"
+                    onClick={() => setF((old) => ({ ...old, callback_url: officialCallback, return_url: officialReturn, cancellation_url: officialCancel }))}
+                    data-testid="hubtel-autofill-urls"
+                    className="border border-black/10 px-5 py-2.5 rounded-md text-sm font-medium hover:bg-slate-50"
+                >
+                    Auto-fill URLs from above
+                </button>
+            </div>
         </div>
     );
 };

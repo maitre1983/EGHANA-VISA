@@ -47,7 +47,7 @@ def initiate_checkout(config: dict, amount: float, description: str, tracking_no
         "callbackUrl": config.get("callback_url", ""),
         "returnUrl": config.get("return_url", ""),
         "merchantAccountNumber": config.get("merchant_account_id"),
-        "cancellationUrl": config.get("return_url", ""),
+        "cancellationUrl": config.get("cancellation_url") or config.get("return_url", ""),
         "clientReference": tracking_no,
         # Application-wide currency contract: prices are ALWAYS stored in USD.
         # Hubtel converts USD → GHS at checkout time (multi-currency merchant setup required).

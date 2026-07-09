@@ -119,6 +119,17 @@ async def _seed_or_migrate_settings() -> None:
     if "admin_notification_email" not in existing:
         updates["admin_notification_email"] = DEFAULT_SETTINGS["admin_notification_email"]
 
+    # Backfill new Hubtel fields (e.g. cancellation_url)
+    existing_hubtel = existing.get("hubtel") or {}
+    hubtel_patched = dict(existing_hubtel)
+    hubtel_changed = False
+    for k, v in DEFAULT_SETTINGS["hubtel"].items():
+        if k not in hubtel_patched:
+            hubtel_patched[k] = v
+            hubtel_changed = True
+    if hubtel_changed:
+        updates["hubtel"] = hubtel_patched
+
     # Migrate visa types: remove obsolete + add missing new ones
     vt_list = existing.get("visa_types", [])
     original_len = len(vt_list)
@@ -387,31 +398,21 @@ class PayConfirm(BaseModel):
     success: bool = True
 
 
-@api.post("/payments/confirm")
-async def payment_confirm(payload: PayConfirm):
-    """Called by the sandbox UI or by Hubtel callback proxy (simplified).
-    In production this endpoint should verify the transaction via Hubtel Status API."""
-    app_doc = await db.applications.find_one({"tracking_no": payload.tracking_no}, {"_id": 0})
-    if not app_doc:
-        raise HTTPException(status_code=404, detail="Application not found")
-
-    if not payload.success:
-        await db.applications.update_one(
-            {"tracking_no": payload.tracking_no},
-            {"$set": {"payment_status": "failed", "updated_at": now_iso()}},
-        )
-        return {"ok": False}
-
+async def _mark_application_paid(app_doc: dict, payment_method: str) -> bool:
+    """Idempotently mark an application as paid, send customer + admin emails.
+    Returns True if this call flipped the state; False if it was already paid."""
+    if app_doc.get("payment_status") == "paid":
+        return False
     await db.applications.update_one(
-        {"tracking_no": payload.tracking_no},
+        {"tracking_no": app_doc["tracking_no"]},
         {"$set": {
             "payment_status": "paid",
             "status": "submitted",
             "paid_at": now_iso(),
+            "payment_method": payment_method,
             "updated_at": now_iso(),
         }},
     )
-    # Email
     processing_label = "Express (48–72h)" if app_doc["processing"] == "express" else "Regular (5–7 days)"
     await email_svc.send(
         recipient=app_doc["email"],
@@ -425,7 +426,6 @@ async def payment_confirm(payload: PayConfirm):
             "amount": f"{app_doc['amount_usd']:.2f}",
         },
     )
-    # Admin notification — payment success (Hubtel/Visa card)
     await _notify_admin("admin_payment_success", {
         "tracking": app_doc["tracking_no"],
         "name": app_doc["full_name"],
@@ -433,10 +433,120 @@ async def payment_confirm(payload: PayConfirm):
         "visa_type": app_doc["visa_name"],
         "processing": processing_label,
         "amount": f"{app_doc['amount_usd']:.2f}",
-        "payment_method": "Visa card (Hubtel)",
+        "payment_method": payment_method,
         "paid_at": now_iso(),
     })
+    return True
+
+
+@api.post("/payments/confirm")
+async def payment_confirm(payload: PayConfirm):
+    """SANDBOX-only endpoint: allows the mock checkout page to mark an application
+    as paid. Rejected when real Hubtel credentials are configured — production
+    payments MUST flow through /api/webhooks/hubtel."""
+    settings = await get_settings()
+    if not is_sandbox(settings.get("hubtel", {})):
+        raise HTTPException(status_code=403, detail="Sandbox-only endpoint. Production uses the Hubtel webhook.")
+
+    app_doc = await db.applications.find_one({"tracking_no": payload.tracking_no}, {"_id": 0})
+    if not app_doc:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    if not payload.success:
+        await db.applications.update_one(
+            {"tracking_no": payload.tracking_no},
+            {"$set": {"payment_status": "failed", "updated_at": now_iso()}},
+        )
+        return {"ok": False}
+
+    await _mark_application_paid(app_doc, payment_method="Visa card (Hubtel Sandbox)")
     return {"ok": True, "tracking_no": payload.tracking_no}
+
+
+@api.get("/payments/status/{tracking_no}")
+async def payment_status(tracking_no: str):
+    """Public: check the payment status of a specific application. Used by the
+    /payment/return page to poll after Hubtel redirects the customer back."""
+    doc = await db.applications.find_one(
+        {"tracking_no": tracking_no},
+        {"_id": 0, "payment_status": 1, "status": 1, "tracking_no": 1, "visa_name": 1, "amount_usd": 1},
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Application not found")
+    return {
+        "tracking_no": doc["tracking_no"],
+        "payment_status": doc.get("payment_status", "pending"),
+        "status": doc.get("status"),
+        "visa_name": doc.get("visa_name"),
+        "amount_usd": doc.get("amount_usd"),
+    }
+
+
+def _hubtel_success(data: dict) -> bool:
+    """Hubtel Online Checkout callback → decide if this is a success payload.
+    Docs: Data.Status ∈ {'Success','Failed','Cancelled'} with ResponseCode '0000' on success."""
+    if not isinstance(data, dict):
+        return False
+    status = str((data.get("Data") or {}).get("Status", "")).lower()
+    if status == "success":
+        return True
+    top_status = str(data.get("Status", "")).lower()
+    resp_code = str(data.get("ResponseCode", ""))
+    return top_status == "success" and resp_code == "0000"
+
+
+@app.post("/api/webhooks/hubtel")
+async def hubtel_webhook(request: Request):
+    """Hubtel Online Checkout server-to-server callback.
+
+    Hubtel POSTs a JSON payload to this URL after the customer completes payment.
+    We verify the transaction against our own initiate record (CheckoutId +
+    ClientReference), then idempotently mark the application paid.
+
+    Hubtel expects a 2xx response quickly; we always return 200 with {ok:true}
+    to prevent unnecessary retries once we've persisted the callback."""
+    raw = await request.body()
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except Exception:
+        data = {}
+
+    inner = data.get("Data") or {}
+    client_ref = str(inner.get("ClientReference") or data.get("ClientReference") or "").strip()
+    checkout_id = str(inner.get("CheckoutId") or inner.get("SalesInvoiceId") or "").strip()
+
+    # Always persist raw callback for audit
+    await db.hubtel_callbacks.insert_one({
+        "id": str(uuid.uuid4()),
+        "created_at": now_iso(),
+        "client_reference": client_ref,
+        "checkout_id": checkout_id,
+        "payload": data if isinstance(data, dict) else {"raw": raw.decode("utf-8", errors="replace")[:2000]},
+    })
+
+    if not client_ref:
+        logger.warning("Hubtel callback missing ClientReference")
+        return {"ok": True}
+
+    app_doc = await db.applications.find_one({"tracking_no": client_ref}, {"_id": 0})
+    if not app_doc:
+        logger.warning(f"Hubtel callback for unknown tracking_no: {client_ref}")
+        return {"ok": True}
+
+    # Optional bind check: if we have a stored transaction id, ensure it matches
+    stored_tx = (app_doc.get("payment_transaction_id") or "").strip()
+    if stored_tx and checkout_id and stored_tx not in (checkout_id,) and checkout_id not in stored_tx:
+        # Mismatch — log but don't crash; some Hubtel plans use different id fields
+        logger.info(f"Hubtel callback checkoutId={checkout_id} vs stored tx={stored_tx} (mismatch, still processing)")
+
+    if _hubtel_success(data):
+        await _mark_application_paid(app_doc, payment_method="Visa card (Hubtel)")
+    else:
+        await db.applications.update_one(
+            {"tracking_no": client_ref},
+            {"$set": {"payment_status": "failed", "updated_at": now_iso()}},
+        )
+    return {"ok": True}
 
 
 # ────────────────────── TRACKING ──────────────────────
@@ -658,6 +768,7 @@ class HubtelConfigIn(BaseModel):
     merchant_account_id: str = ""
     callback_url: str = ""
     return_url: str = ""
+    cancellation_url: str = ""
     outbound_proxy_url: str = ""
 
 

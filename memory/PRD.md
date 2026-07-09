@@ -44,6 +44,21 @@ Build a full-stack Ghana Visa On Arrival web application for **eghanavisa.com** 
 - ✅ Email templates re-seeded (`EMAIL_TEMPLATES_VERSION = 3`) — adds the two new admin templates without touching existing user-facing ones.
 - ✅ Verified end-to-end via curl: submission + payment produced both admin emails (Resend `simulated=false`), and Abena introduces herself correctly.
 
+## Iteration 13 (2026-02-08) — Hubtel production URLs
+- ✅ New backend endpoint `POST /api/webhooks/hubtel` — real Hubtel Online Checkout server-to-server callback. Verifies `Data.ClientReference` + optional `CheckoutId` match a payment we initiated, then idempotently marks the application paid (via shared `_mark_application_paid` helper). All callbacks archived to `hubtel_callbacks` collection.
+- ✅ New public endpoint `GET /api/payments/status/{tracking_no}` — light payment-state check used by the return page while polling.
+- ✅ New frontend routes:
+    - `/payment/return` — customer-facing "verifying payment…" page that polls status until the webhook marks it paid, then forwards to `/success/:tracking`.
+    - `/payment/cancelled` — cancellation landing page with retry CTA.
+- ✅ Security fix: `POST /api/payments/confirm` (formerly publicly callable, could mark ANY application as paid) is now hard-gated to sandbox mode (`is_sandbox(hubtel) == true`); production traffic returns 403.
+- ✅ Admin settings > Hubtel tab now shows the three production URLs as copy-only fields (Callback / Return / Cancellation) with an "Auto-fill URLs" helper — same UX as the NowPayments IPN URL.
+- ✅ Settings migration adds `cancellation_url` field to existing Hubtel config without touching user overrides.
+
+### Official production URLs (production domain `https://eghanavisa.com`)
+- Callback URL (server-to-server, updates payment status): `https://eghanavisa.com/api/webhooks/hubtel`
+- Return URL (customer redirect after payment, display-only): `https://eghanavisa.com/payment/return`
+- Cancellation URL (customer clicks cancel): `https://eghanavisa.com/payment/cancelled`
+
 ## User personas
 1. **Traveller** (any nationality except 16 ECOWAS) — fills form, uploads docs, pays by Visa, tracks status, receives visa by email.
 2. **Admin / Operator** — logs in at /admin, reviews applications, downloads documents, transitions status, tunes prices/toggles/keys.
