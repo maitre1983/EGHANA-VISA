@@ -184,7 +184,6 @@ const HubtelForm = ({ initial, onSave }) => {    const [f, setF] = useState(init
                     ["merchant_account_id", "Merchant Account ID"],
                     ["callback_url", "Callback URL"],
                     ["return_url", "Return URL"],
-                    ["outbound_proxy_url", "Outbound static IP proxy URL (optional, e.g. Fixie)"],
                 ].map(([k, label]) => (
                     <div key={k}>
                         <label className="text-xs uppercase tracking-wider text-slate-600 font-medium">{label}</label>
