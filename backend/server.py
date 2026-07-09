@@ -15,7 +15,14 @@ from datetime import datetime, timezone
 
 from countries import passport_countries, travel_from_countries
 from auth_utils import hash_password, verify_password, create_token, require_admin
-from storage_service import storage, validate_file, MIME_MAP
+from storage_service import (
+    validate_file,
+    MIME_MAP,
+    get_backend as _storage_backend,
+    get_backend_for_path as _storage_backend_for_path,
+    R2StorageBackend,
+    detect_environment as _detect_env,
+)
 from email_service import EmailService
 from hubtel_service import initiate_checkout, is_sandbox
 from ama_chat import ask_ama
@@ -130,6 +137,19 @@ async def _seed_or_migrate_settings() -> None:
     for k in ("ga4_measurement_id", "gsc_verification", "clarity_project_id"):
         if k not in existing:
             updates[k] = ""
+    if "r2" not in existing:
+        updates["r2"] = DEFAULT_SETTINGS["r2"]
+    else:
+        # Backfill missing keys in existing r2 config
+        existing_r2 = existing.get("r2") or {}
+        r2_patched = dict(existing_r2)
+        r2_changed = False
+        for k, v in DEFAULT_SETTINGS["r2"].items():
+            if k not in r2_patched:
+                r2_patched[k] = v
+                r2_changed = True
+        if r2_changed:
+            updates["r2"] = r2_patched
 
     # Backfill new Hubtel fields (e.g. cancellation_url)
     existing_hubtel = existing.get("hubtel") or {}
@@ -358,14 +378,16 @@ async def upload_document(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    path = storage.build_path(tracking_no, doc_type, ext)
-    result = storage.put(path, data, MIME_MAP.get(ext, "application/octet-stream"))
+    backend = _storage_backend(settings)
+    path = backend.build_path(tracking_no, doc_type, ext)
+    result = backend.put(path, data, MIME_MAP.get(ext, "application/octet-stream"))
 
     await db.applications.update_one(
         {"tracking_no": tracking_no},
         {"$set": {
             f"documents.{doc_type}": {
                 "path": result["path"],
+                "backend": getattr(backend, "name", "unknown"),
                 "original_filename": file.filename,
                 "content_type": MIME_MAP.get(ext),
                 "size": result.get("size", len(data)),
@@ -374,7 +396,7 @@ async def upload_document(
             "updated_at": now_iso(),
         }},
     )
-    return {"ok": True, "doc_type": doc_type, "path": result["path"]}
+    return {"ok": True, "doc_type": doc_type, "path": result["path"], "backend": getattr(backend, "name", "unknown")}
 
 
 # ────────────────────── PAYMENT ──────────────────────
@@ -706,8 +728,28 @@ async def admin_download_doc(tracking_no: str, doc_type: str, ctx: dict = Depend
     if not app_doc or doc_type not in (app_doc.get("documents") or {}):
         raise HTTPException(status_code=404, detail="Document not found")
     ref = app_doc["documents"][doc_type]
-    data, ct = storage.get(ref["path"])
+    settings = await get_settings()
+    backend = _storage_backend_for_path(ref["path"], settings)
+    data, ct = backend.get(ref["path"])
     return Response(content=data, media_type=ref.get("content_type", ct))
+
+
+@api.get("/admin/applications/{tracking_no}/documents/{doc_type}/signed-url")
+async def admin_signed_url_doc(tracking_no: str, doc_type: str, ctx: dict = Depends(require_admin)):
+    """Return a short-lived signed URL when the file lives on R2. Falls back to
+    a hint that the caller should use the streaming endpoint if the backend
+    (Emergent legacy) does not support pre-signed URLs."""
+    app_doc = await db.applications.find_one({"tracking_no": tracking_no}, {"_id": 0})
+    if not app_doc or doc_type not in (app_doc.get("documents") or {}):
+        raise HTTPException(status_code=404, detail="Document not found")
+    ref = app_doc["documents"][doc_type]
+    settings = await get_settings()
+    backend = _storage_backend_for_path(ref["path"], settings)
+    url = backend.signed_url(ref["path"]) if hasattr(backend, "signed_url") else None
+    if url:
+        return {"url": url, "backend": backend.name, "expires_in": getattr(backend, "signed_url_ttl", 900)}
+    # Legacy fallback — caller should use the streaming endpoint above
+    return {"url": None, "backend": backend.name, "streaming_endpoint": f"/api/admin/applications/{tracking_no}/documents/{doc_type}"}
 
 
 # ────────────────────── ADMIN SETTINGS ──────────────────────
@@ -851,7 +893,11 @@ async def admin_update_upload(payload: MaxUploadIn, ctx: dict = Depends(require_
 
 @api.get("/admin/settings")
 async def admin_get_settings(ctx: dict = Depends(require_admin)):
-    return await get_settings()
+    s = await get_settings()
+    # Redact R2 secret before returning
+    if isinstance(s.get("r2"), dict):
+        s["r2"] = _redact_r2(s["r2"])
+    return s
 
 
 # ────────────────── EMAIL TEMPLATES ──────────────────
@@ -1602,16 +1648,21 @@ async def admin_cleanup_preview(ctx: dict = Depends(require_admin)):
 @api.post("/admin/cleanup/test-data")
 async def admin_cleanup_test_data(ctx: dict = Depends(require_admin)):
     """Delete applications matching test heuristics and their related side data
-    (payment records, chat logs). Safe: only touches records the preview endpoint returns."""
+    (payment records, chat logs). Safe: only touches records the preview endpoint returns.
+    Also purges the corresponding R2 folder for each affected tracking number."""
     tracking_nos = []
     async for doc in db.applications.find({}, {"tracking_no": 1, "_id": 0}):
-        # Re-run heuristic on full doc
         full = await db.applications.find_one({"tracking_no": doc["tracking_no"]}, {"_id": 0})
         if full and _is_test_record(full):
             tracking_nos.append(doc["tracking_no"])
 
-    deleted = {"applications": 0, "hubtel_callbacks": 0, "crypto_payments": 0, "email_log": 0, "chat_log": 0}
+    deleted = {"applications": 0, "hubtel_callbacks": 0, "crypto_payments": 0, "email_log": 0, "chat_log": 0, "r2_objects": 0}
     if tracking_nos:
+        settings = await get_settings()
+        r2 = R2StorageBackend((settings or {}).get("r2") or {})
+        if r2.is_configured():
+            for tn in tracking_nos:
+                deleted["r2_objects"] += r2.delete_prefix(r2.applicant_prefix(tn))
         res = await db.applications.delete_many({"tracking_no": {"$in": tracking_nos}})
         deleted["applications"] = res.deleted_count
         res = await db.hubtel_callbacks.delete_many({"client_reference": {"$in": tracking_nos}})
@@ -1629,7 +1680,7 @@ class WipeAllIn(BaseModel):
 async def admin_wipe_all(payload: WipeAllIn, ctx: dict = Depends(require_admin)):
     """Nuclear option: wipe ALL applications, payments, callbacks, logs and analytics.
     Requires body {\"confirm\":\"DELETE ALL\"}. Preserves admin settings, users,
-    email templates."""
+    email templates. Also purges the R2 bucket under this environment's prefix."""
     if payload.confirm != "DELETE ALL":
         raise HTTPException(status_code=400, detail='Confirmation string must be exactly "DELETE ALL".')
 
@@ -1641,7 +1692,122 @@ async def admin_wipe_all(payload: WipeAllIn, ctx: dict = Depends(require_admin))
     for coll in collections:
         res = await db[coll].delete_many({})
         deleted[coll] = res.deleted_count
+
+    # Purge R2 under this env's applicants/ prefix to avoid orphans
+    settings = await get_settings()
+    r2 = R2StorageBackend((settings or {}).get("r2") or {})
+    r2_deleted = 0
+    if r2.is_configured():
+        r2_deleted = r2.delete_prefix(f"{r2.env_prefix}/applicants/")
+        r2_deleted += r2.delete_prefix(f"{r2.env_prefix}/payments/")
+        r2_deleted += r2.delete_prefix(f"{r2.env_prefix}/invoices/")
+    deleted["r2_objects"] = r2_deleted
     return {"ok": True, "deleted": deleted}
+
+
+# ────────────────── SINGLE APPLICATION DELETE (with R2 purge) ──────────────────
+
+@api.delete("/admin/applications/{tracking_no}")
+async def admin_delete_application(tracking_no: str, ctx: dict = Depends(require_admin)):
+    """Delete a specific application and all of its associated data — MongoDB
+    records (application, payment side records) and every R2 object under the
+    application's folder. Idempotent."""
+    app_doc = await db.applications.find_one({"tracking_no": tracking_no}, {"_id": 0})
+    if not app_doc:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    settings = await get_settings()
+    deleted = {"applications": 0, "hubtel_callbacks": 0, "crypto_payments": 0, "r2_objects": 0, "legacy_files": 0}
+
+    # Try both backends — the app may have files in R2 or in the legacy Emergent backend
+    r2 = R2StorageBackend((settings or {}).get("r2") or {})
+    if r2.is_configured():
+        deleted["r2_objects"] = r2.delete_prefix(r2.applicant_prefix(tracking_no))
+    # Legacy — Emergent has no delete API; count files that will orphan for admin awareness
+    for _doc_type, ref in (app_doc.get("documents") or {}).items():
+        path = (ref or {}).get("path", "")
+        if path.startswith(("eghanavisa/", "eghanavisa/applications/")):
+            deleted["legacy_files"] += 1
+
+    r = await db.applications.delete_one({"tracking_no": tracking_no})
+    deleted["applications"] = r.deleted_count
+    r = await db.hubtel_callbacks.delete_many({"client_reference": tracking_no})
+    deleted["hubtel_callbacks"] = r.deleted_count
+    r = await db.crypto_payments.delete_many({"tracking_no": tracking_no})
+    deleted["crypto_payments"] = r.deleted_count
+    return {"ok": True, "tracking_no": tracking_no, "deleted": deleted}
+
+
+# ────────────────── STORAGE (Cloudflare R2) ADMIN ──────────────────
+
+class R2ConfigIn(BaseModel):
+    enabled: bool = True
+    account_id: str = ""
+    bucket: str = ""
+    access_key_id: str = ""
+    secret_access_key: str = ""
+    cdn_domain: str = ""
+    env_prefix: str = ""
+    signed_url_ttl: int = 900
+
+
+@api.post("/admin/settings/r2")
+async def admin_update_r2(payload: R2ConfigIn, ctx: dict = Depends(require_admin)):
+    """Persist Cloudflare R2 credentials. Empty secret_access_key means 'keep
+    existing' so admins can edit the config without re-typing the secret."""
+    current = (await get_settings()).get("r2") or {}
+    updates = {
+        "enabled": payload.enabled,
+        "account_id": payload.account_id.strip(),
+        "bucket": payload.bucket.strip(),
+        "access_key_id": payload.access_key_id.strip(),
+        "cdn_domain": payload.cdn_domain.strip(),
+        "env_prefix": payload.env_prefix.strip(),
+        "signed_url_ttl": max(60, min(int(payload.signed_url_ttl or 900), 24 * 3600)),
+    }
+    secret = payload.secret_access_key.strip()
+    updates["secret_access_key"] = secret if secret else current.get("secret_access_key", "")
+    await db.settings.update_one(
+        {"id": "singleton"},
+        {"$set": {"r2": updates, "updated_at": now_iso()}},
+    )
+    return {"ok": True, "r2": _redact_r2(updates)}
+
+
+@api.post("/admin/storage/test")
+async def admin_storage_test(ctx: dict = Depends(require_admin)):
+    """Runs a HEAD + tiny put/delete round-trip against R2 to verify credentials
+    and permissions. Returns detailed result to display in the admin UI."""
+    settings = await get_settings()
+    r2 = R2StorageBackend((settings or {}).get("r2") or {})
+    return r2.test_connection()
+
+
+@api.get("/admin/storage/status")
+async def admin_storage_status(ctx: dict = Depends(require_admin)):
+    """Read-only summary of the active storage backend."""
+    settings = await get_settings()
+    r2_cfg = (settings or {}).get("r2") or {}
+    r2 = R2StorageBackend(r2_cfg)
+    return {
+        "env_detected": _detect_env(),
+        "r2_configured": r2.is_configured(),
+        "r2_enabled": bool(r2_cfg.get("enabled", True)),
+        "active_backend": "r2" if (r2.is_configured() and r2_cfg.get("enabled", True)) else "emergent (legacy)",
+        "bucket": r2.bucket or None,
+        "cdn_domain": r2.cdn_domain or None,
+        "env_prefix": r2.env_prefix,
+        "signed_url_ttl": r2.signed_url_ttl,
+    }
+
+
+def _redact_r2(cfg: dict) -> dict:
+    """Return R2 config with the secret masked — for API responses."""
+    safe = dict(cfg or {})
+    if safe.get("secret_access_key"):
+        s = safe["secret_access_key"]
+        safe["secret_access_key"] = f"****{s[-4:]}" if len(s) > 4 else "****"
+    return safe
 
 
 # ────────────────── MOUNT ──────────────────

@@ -84,12 +84,55 @@ Build a full-stack Ghana Visa On Arrival web application for **eghanavisa.com** 
 - ✅ `GET /api/admin/seo/status` — pings sitemap.xml + robots.txt, returns HTTP codes, lists core routes meta status. Prefers `X-Forwarded-Host` so preview points to public URL.
 - ✅ Dashboard shows technical health (sitemap ✅, robots ✅, GSC connect, GA4 connect), core pages meta table (title / description / canonical / structured data), indexed-pages estimate + placeholder for GSC search performance.
 
-### 4. Test Data Cleanup + Danger Zone
-- ✅ `GET /api/admin/cleanup/preview` — lists applications matching test-heuristics (email `@example.com`, name starts with `TEST`, dummy passport prefixes).
-- ✅ `POST /api/admin/cleanup/test-data` — deletes matched applications + their hubtel_callbacks + crypto_payments.
-- ✅ `POST /api/admin/cleanup/wipe-all` — nuclear option, requires body `{"confirm":"DELETE ALL"}`. Wipes applications, hubtel_callbacks, crypto_payments, email_log, chat_log, analytics_events. Preserves admin_users, settings, email_templates.
-- ✅ New "Danger Zone" tab in Admin Settings — preview button + safe-cleanup + red "DELETE ALL" nuclear input.
-- ✅ **Preview DB cleaned**: 47 test applications, 15 crypto payments, 1 hubtel callback, 69 email log entries, 17 chat sessions removed. 3 real-looking customer records preserved.
+## Iteration 15 (2026-02-08) — Cloudflare R2 file storage
+
+### Architecture
+- All **new** file uploads route to a private Cloudflare R2 bucket (S3-compatible protocol via boto3).
+- MongoDB stores only the R2 path + metadata (backend, size, mime, uploaded_at). No blobs in Mongo.
+- The **Emergent Object Storage** backend is kept as a legacy fallback so files uploaded before this iteration (3 real Emile applications) still download without any migration.
+- Backend auto-selects: R2 when configured + enabled, otherwise Emergent.
+
+### Backend
+- `storage_service.py` rewritten with `StorageService` abstract + `R2StorageBackend` (boto3) + `EmergentStorageBackend` (legacy).
+- Environment auto-detection (`STORAGE_ENV` > `EMERGENT_ENV` > `APP_URL` / `preview_endpoint` inspection > `development`) → drives the top-level folder prefix.
+- Folder layout in the bucket:
+    ```
+    {env}/applicants/{tracking_no}/photos/{doc_type}-{uuid}.{ext}
+    {env}/applicants/{tracking_no}/passports/{doc_type}-{uuid}.{ext}
+    {env}/applicants/{tracking_no}/supporting-documents/{doc_type}-{uuid}.{ext}
+    {env}/payments/{tracking_no}/{uuid}.{ext}
+    {env}/invoices/{tracking_no}/{uuid}.{ext}
+    {env}/exports/{yyyy-mm-dd}/{uuid}.{ext}
+    ```
+- Bucket stays **private**. Downloads use short-lived pre-signed URLs (default TTL 15 min, configurable 60s–24h).
+- If a **CDN custom domain** (e.g. `https://cdn.eghanavisa.com`) is configured, signed URLs are generated against that host so downloads flow through Cloudflare's CDN edge.
+- New endpoints:
+    - `POST /api/admin/settings/r2` — save R2 credentials (secret is write-only; empty means "keep existing").
+    - `POST /api/admin/storage/test` — HEAD + probe put/delete round-trip.
+    - `GET /api/admin/storage/status` — active backend, env, bucket, TTL, CDN.
+    - `DELETE /api/admin/applications/{tracking_no}` — deletes application + purges its R2 folder.
+    - `GET /api/admin/applications/{tn}/documents/{type}/signed-url` — returns signed URL for R2 files, streaming fallback for legacy Emergent files.
+- Deletion policy wired to Danger Zone:
+    - Safe cleanup (`/admin/cleanup/test-data`) purges each matched tracking-no's R2 folder.
+    - Nuclear wipe (`/admin/cleanup/wipe-all`) purges `{env}/applicants/`, `{env}/payments/`, `{env}/invoices/` under R2.
+- `GET /admin/settings` masks the R2 secret (`****xyz`) so it's never leaked to the browser.
+
+### Frontend
+- New **Storage (R2)** tab in Admin Settings with:
+    - Live status card (Active backend / Environment / Bucket / Signed URL TTL)
+    - All 7 config fields (Account ID, Bucket, Access Key ID, Secret, CDN domain, Env prefix, TTL) with hint text
+    - **Save R2 configuration** + **Test R2 connection** buttons
+    - Inline test result with success/failure detail
+    - Folder-layout reference block
+- Secret field is `type=password`, placeholder shows current masked value; leaving empty preserves existing secret.
+
+### Verified
+- ✅ Save + reload + secret redaction working via curl.
+- ✅ Test button surfaces boto3 endpoint validation errors cleanly.
+- ✅ Env auto-detected as `preview` on the current environment.
+- ✅ Backward compatibility: Emile's existing Emergent-stored PNG (377KB) downloads correctly via the auto-selecting streaming endpoint.
+- ✅ Signed-URL endpoint returns clean fallback (`{url:null, streaming_endpoint:...}`) for legacy files.
+- ⏳ End-to-end R2 upload + signed-URL download waiting on the user to paste real Cloudflare R2 credentials.
 
 ## User personas
 1. **Traveller** (any nationality except 16 ECOWAS) — fills form, uploads docs, pays by Visa, tracks status, receives visa by email.

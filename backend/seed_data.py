@@ -41,6 +41,16 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "ga4_measurement_id": "",
     "gsc_verification": "",
     "clarity_project_id": "",
+    "r2": {
+        "enabled": True,
+        "account_id": "",
+        "bucket": "",
+        "access_key_id": "",
+        "secret_access_key": "",
+        "cdn_domain": "https://cdn.eghanavisa.com",
+        "env_prefix": "",  # empty → auto-detect from environment
+        "signed_url_ttl": 900,  # 15 minutes
+    },
     "hubtel": {
         "sandbox": True,
         "api_id": "",

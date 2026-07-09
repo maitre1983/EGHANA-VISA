@@ -12,7 +12,7 @@ const AI_MODELS = [
     "gemini-3-flash-preview",
 ];
 
-const SEC = { prices: "Visa Prices", types: "Visa Types", methods: "Payment Methods", hubtel: "Hubtel API", nowpayments: "NowPayments (USDT)", other: "WhatsApp & AI", analytics: "Analytics IDs", danger: "Danger Zone" };
+const SEC = { prices: "Visa Prices", types: "Visa Types", methods: "Payment Methods", hubtel: "Hubtel API", nowpayments: "NowPayments (USDT)", storage: "Storage (R2)", other: "WhatsApp & AI", analytics: "Analytics IDs", danger: "Danger Zone" };
 
 export default function AdminSettings() {
     const [tab, setTab] = useState("prices");
@@ -130,6 +130,7 @@ export default function AdminSettings() {
                     </>
                 )}
                 {tab === "analytics" && <AnalyticsIdsForm initial={s} onReload={reload} />}
+                {tab === "storage" && <R2StorageForm initial={s} onReload={reload} />}
                 {tab === "danger" && <DangerZone onReload={reload} />}
             </div>
         </div>
@@ -457,3 +458,170 @@ const DangerZone = ({ onReload }) => {
         </div>
     );
 };
+
+const R2StorageForm = ({ initial, onReload }) => {
+    const cur = initial?.r2 || {};
+    const [f, setF] = useState({
+        enabled: cur.enabled ?? true,
+        account_id: cur.account_id || "",
+        bucket: cur.bucket || "",
+        access_key_id: cur.access_key_id || "",
+        secret_access_key: "",  // never re-populated (masked server-side)
+        cdn_domain: cur.cdn_domain || "https://cdn.eghanavisa.com",
+        env_prefix: cur.env_prefix || "",
+        signed_url_ttl: cur.signed_url_ttl || 900,
+    });
+    const set = (k, v) => setF((old) => ({ ...old, [k]: v }));
+    const [status, setStatus] = useState(null);
+    const [testResult, setTestResult] = useState(null);
+    const [busy, setBusy] = useState(false);
+
+    const reloadStatus = async () => {
+        try {
+            const { data } = await api.get("/admin/storage/status");
+            setStatus(data);
+        } catch (e) { /* ignore */ }
+    };
+    useEffect(() => { reloadStatus(); }, []);
+
+    const save = async () => {
+        setBusy(true);
+        try {
+            await api.post("/admin/settings/r2", f);
+            toast.success("R2 configuration saved");
+            setF((old) => ({ ...old, secret_access_key: "" }));
+            onReload(); reloadStatus();
+        } catch (e) { toast.error(e?.response?.data?.detail || "Save failed"); }
+        finally { setBusy(false); }
+    };
+    const test = async () => {
+        setBusy(true); setTestResult(null);
+        try {
+            const { data } = await api.post("/admin/storage/test");
+            setTestResult(data);
+            if (data.ok) toast.success("R2 connection successful");
+            else toast.error(`R2 test failed: ${data.detail || "unknown"}`);
+        } catch (e) {
+            const detail = e?.response?.data?.detail || e.message;
+            setTestResult({ ok: false, detail });
+            toast.error(`Test error: ${detail}`);
+        } finally { setBusy(false); }
+    };
+
+    const secretHint = cur.secret_access_key && !f.secret_access_key ? `Currently: ${cur.secret_access_key} (leave empty to keep)` : "";
+
+    return (
+        <div className="space-y-5">
+            {/* Live status card */}
+            {status && (
+                <div className="bg-white border border-black/10 rounded-xl p-5 grid md:grid-cols-4 gap-4 text-sm">
+                    <div>
+                        <div className="text-[11px] uppercase tracking-widest text-slate-500 font-semibold">Active backend</div>
+                        <div className={`font-heading font-bold mt-1 ${status.active_backend?.startsWith("r2") ? "text-ghana-green" : "text-slate-600"}`} data-testid="r2-active-backend">{status.active_backend}</div>
+                    </div>
+                    <div>
+                        <div className="text-[11px] uppercase tracking-widest text-slate-500 font-semibold">Environment</div>
+                        <div className="font-mono mt-1" data-testid="r2-env">{status.env_prefix} <span className="text-xs text-slate-400">(detected: {status.env_detected})</span></div>
+                    </div>
+                    <div>
+                        <div className="text-[11px] uppercase tracking-widest text-slate-500 font-semibold">Bucket</div>
+                        <div className="font-mono mt-1">{status.bucket || <span className="text-slate-400 italic">not configured</span>}</div>
+                    </div>
+                    <div>
+                        <div className="text-[11px] uppercase tracking-widest text-slate-500 font-semibold">Signed URL TTL</div>
+                        <div className="font-mono mt-1">{status.signed_url_ttl}s ({Math.round(status.signed_url_ttl / 60)}m)</div>
+                    </div>
+                </div>
+            )}
+
+            <div className="bg-white border border-black/10 rounded-xl p-6 space-y-4">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <div className="font-heading font-semibold">Cloudflare R2 credentials</div>
+                        <p className="text-xs text-slate-500 mt-1">Files uploaded via <code className="bg-slate-100 px-1 rounded">POST /api/applications/&#123;tn&#125;/documents</code> are stored privately in R2 and served via short-lived signed URLs. Nothing hardcoded — everything read from this form.</p>
+                    </div>
+                    <ToggleRow active={f.enabled} onChange={(v) => set("enabled", v)} testid="r2-enabled" />
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-4">
+                    <div>
+                        <label className="text-xs uppercase tracking-wider text-slate-600 font-medium">Account ID</label>
+                        <input value={f.account_id} onChange={(e) => set("account_id", e.target.value)} data-testid="r2-account-id" placeholder="32-char hex from Cloudflare R2 → Overview"
+                            className="mt-1.5 w-full border border-black/10 rounded-md px-3 py-2.5 text-sm font-mono focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none" />
+                    </div>
+                    <div>
+                        <label className="text-xs uppercase tracking-wider text-slate-600 font-medium">Bucket name</label>
+                        <input value={f.bucket} onChange={(e) => set("bucket", e.target.value)} data-testid="r2-bucket" placeholder="eghanavisa"
+                            className="mt-1.5 w-full border border-black/10 rounded-md px-3 py-2.5 text-sm font-mono focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none" />
+                    </div>
+                    <div>
+                        <label className="text-xs uppercase tracking-wider text-slate-600 font-medium">Access Key ID</label>
+                        <input value={f.access_key_id} onChange={(e) => set("access_key_id", e.target.value)} data-testid="r2-access-key-id"
+                            className="mt-1.5 w-full border border-black/10 rounded-md px-3 py-2.5 text-sm font-mono focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none" />
+                    </div>
+                    <div>
+                        <label className="text-xs uppercase tracking-wider text-slate-600 font-medium">Secret Access Key</label>
+                        <input value={f.secret_access_key} onChange={(e) => set("secret_access_key", e.target.value)} data-testid="r2-secret-access-key" type="password" placeholder={secretHint || "Enter secret (write-only)"}
+                            className="mt-1.5 w-full border border-black/10 rounded-md px-3 py-2.5 text-sm font-mono focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none" />
+                        {secretHint && <div className="text-[11px] text-slate-500 mt-1">{secretHint}</div>}
+                    </div>
+                    <div>
+                        <label className="text-xs uppercase tracking-wider text-slate-600 font-medium">CDN custom domain</label>
+                        <input value={f.cdn_domain} onChange={(e) => set("cdn_domain", e.target.value)} data-testid="r2-cdn-domain" placeholder="https://cdn.eghanavisa.com"
+                            className="mt-1.5 w-full border border-black/10 rounded-md px-3 py-2.5 text-sm font-mono focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none" />
+                        <div className="text-[11px] text-slate-500 mt-1">Optional. When set, signed URLs are generated against this host. Configure the domain in Cloudflare → R2 → Bucket → Settings → Custom Domains (keep &quot;Restrict Access&quot; enabled).</div>
+                    </div>
+                    <div>
+                        <label className="text-xs uppercase tracking-wider text-slate-600 font-medium">Environment prefix</label>
+                        <input value={f.env_prefix} onChange={(e) => set("env_prefix", e.target.value)} data-testid="r2-env-prefix" placeholder="(leave empty for auto: production / preview / development)"
+                            className="mt-1.5 w-full border border-black/10 rounded-md px-3 py-2.5 text-sm font-mono focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none" />
+                    </div>
+                    <div>
+                        <label className="text-xs uppercase tracking-wider text-slate-600 font-medium">Signed URL TTL (seconds)</label>
+                        <input value={f.signed_url_ttl} onChange={(e) => set("signed_url_ttl", parseInt(e.target.value || "0", 10))} data-testid="r2-signed-url-ttl" type="number" min="60" max="86400"
+                            className="mt-1.5 w-full border border-black/10 rounded-md px-3 py-2.5 text-sm font-mono focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none" />
+                        <div className="text-[11px] text-slate-500 mt-1">Default 900 (15 min). Min 60s, max 86400s (24h).</div>
+                    </div>
+                </div>
+
+                <div className="flex gap-2 flex-wrap">
+                    <button onClick={save} disabled={busy} data-testid="r2-save" className="bg-ghana-green text-white px-5 py-2.5 rounded-md text-sm font-medium inline-flex items-center gap-2 hover:bg-ghana-green-dark disabled:opacity-50">
+                        <Save size={14} /> Save R2 configuration
+                    </button>
+                    <button onClick={test} disabled={busy} data-testid="r2-test" className="border border-ghana-green text-ghana-green px-5 py-2.5 rounded-md text-sm font-medium hover:bg-ghana-green/5 disabled:opacity-50">
+                        Test R2 connection
+                    </button>
+                </div>
+
+                {testResult && (
+                    <div className={`mt-2 p-3 rounded-lg text-sm font-mono ${testResult.ok ? "bg-ghana-green/5 border border-ghana-green/30 text-ghana-green-dark" : "bg-ghana-red/5 border border-ghana-red/30 text-ghana-red"}`} data-testid="r2-test-result">
+                        {testResult.ok ? (
+                            <div>
+                                <div className="font-semibold">✔ R2 connection OK</div>
+                                <div className="mt-1 text-xs">Bucket: <strong>{testResult.bucket}</strong> · Env: <strong>{testResult.env_prefix}</strong> · TTL: <strong>{testResult.signed_url_ttl}s</strong>{testResult.cdn_domain ? ` · CDN: ${testResult.cdn_domain}` : ""}</div>
+                            </div>
+                        ) : (
+                            <div>
+                                <div className="font-semibold">✘ R2 connection failed</div>
+                                <div className="mt-1 text-xs">{testResult.detail}</div>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+
+            {/* Folder layout reference */}
+            <div className="bg-white border border-black/10 rounded-xl p-5">
+                <div className="font-heading font-semibold text-sm mb-2">Folder layout inside the bucket</div>
+                <pre className="text-[11px] font-mono bg-slate-50 rounded-md p-3 leading-relaxed overflow-x-auto">{`{env}/applicants/{tracking_no}/photos/…
+{env}/applicants/{tracking_no}/passports/…
+{env}/applicants/{tracking_no}/supporting-documents/…
+{env}/payments/{tracking_no}/…
+{env}/invoices/{tracking_no}/…
+{env}/exports/{yyyy-mm-dd}/…`}</pre>
+                <div className="text-[11px] text-slate-500 mt-2">Bucket must stay private. Downloads are served exclusively via short-lived pre-signed URLs. When an application (or the Danger Zone wipe) deletes records, the corresponding R2 folder is purged automatically.</div>
+            </div>
+        </div>
+    );
+};
+
