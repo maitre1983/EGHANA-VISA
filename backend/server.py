@@ -31,6 +31,12 @@ from hubtel_service import (
     missing_live_fields as _hubtel_missing,
     HubtelNotConfiguredError,
 )
+from fx_service import (
+    convert_usd_to_ghs as _convert_usd_ghs,
+    get_rate as _fx_get_rate,
+    FxError,
+    PROVIDERS as _FX_PROVIDERS,
+)
 from ama_chat import ask_ama
 import nowpayments_service as nowp
 from seed_data import DEFAULT_SETTINGS, DEFAULT_EMAIL_TEMPLATES, EMAIL_TEMPLATES_VERSION, OBSOLETE_VISA_CODES
@@ -156,6 +162,18 @@ async def _seed_or_migrate_settings() -> None:
                 r2_changed = True
         if r2_changed:
             updates["r2"] = r2_patched
+    if "fx" not in existing:
+        updates["fx"] = DEFAULT_SETTINGS["fx"]
+    else:
+        existing_fx = existing.get("fx") or {}
+        fx_patched = dict(existing_fx)
+        fx_changed = False
+        for k, v in DEFAULT_SETTINGS["fx"].items():
+            if k not in fx_patched:
+                fx_patched[k] = v
+                fx_changed = True
+        if fx_changed:
+            updates["fx"] = fx_patched
 
     # Backfill new Hubtel fields (e.g. cancellation_url)
     existing_hubtel = existing.get("hubtel") or {}
@@ -422,21 +440,64 @@ async def payment_initiate(payload: PayInit):
         raise HTTPException(status_code=400, detail="Application already paid")
 
     settings = await get_settings()
+    hubtel_cfg = settings.get("hubtel", {})
+
+    # Currency conversion: platform prices in USD, Hubtel settles in GHS.
+    # Only do the conversion for live production mode — sandbox skips it so
+    # we don't hammer FX providers during smoke tests.
+    fx_meta = None
+    amount_to_send = app_doc["amount_usd"]
+    currency = "USD"
+    if not is_sandbox(hubtel_cfg):
+        try:
+            conv = _convert_usd_ghs(app_doc["amount_usd"], settings.get("fx", {}))
+            fx_meta = conv
+            amount_to_send = conv["amount_ghs"]
+            currency = "GHS"
+        except FxError as e:
+            raise HTTPException(status_code=503, detail={
+                "code": "fx_unavailable",
+                "message": f"Could not obtain USD→GHS exchange rate: {e}",
+            })
+
+    # Persist FX + charge metadata BEFORE calling Hubtel so an upstream failure
+    # still leaves a full audit trail for reconciliation.
+    pre_call_record = {
+        "payment_method": "hubtel",
+        "payment_currency": currency,
+        "amount_usd": round(float(app_doc["amount_usd"]), 2),
+        "amount_charged": float(amount_to_send),
+        "updated_at": now_iso(),
+    }
+    if fx_meta:
+        pre_call_record["fx"] = fx_meta
+    await db.applications.update_one(
+        {"tracking_no": payload.tracking_no},
+        {"$set": pre_call_record},
+    )
+
     try:
         result = initiate_checkout(
-            settings.get("hubtel", {}),
-            amount=app_doc["amount_usd"],
+            hubtel_cfg,
+            amount=amount_to_send,
             description=f"Ghana Visa {app_doc['visa_name']} - {app_doc['tracking_no']}",
             tracking_no=app_doc["tracking_no"],
+            currency=currency,
         )
     except HubtelNotConfiguredError as e:
-        # Do NOT silently fall back to sandbox. Surface a clear error so the
-        # frontend can tell the customer/admin what to do.
         raise HTTPException(status_code=503, detail={
             "code": "hubtel_not_configured",
             "message": str(e),
             "missing_fields": e.missing,
         })
+    except RuntimeError as e:
+        # Upstream Hubtel error (network, auth, etc.). FX metadata already
+        # persisted above so ops can still reconcile.
+        raise HTTPException(status_code=502, detail={
+            "code": "hubtel_gateway_error",
+            "message": str(e),
+        })
+
     await db.applications.update_one(
         {"tracking_no": payload.tracking_no},
         {"$set": {"payment_transaction_id": result["transaction_id"], "updated_at": now_iso()}},
@@ -1826,6 +1887,56 @@ def _redact_r2(cfg: dict) -> dict:
         s = safe["secret_access_key"]
         safe["secret_access_key"] = f"****{s[-4:]}" if len(s) > 4 else "****"
     return safe
+
+
+# ────────────────── FX (USD → GHS) ADMIN ──────────────────
+
+class FxConfigIn(BaseModel):
+    provider: str = "open_er_api"
+    manual_rate: float = 0.0
+    buffer_pct: float = 0.0
+    cache_seconds: int = 900
+
+
+@api.post("/admin/settings/fx")
+async def admin_update_fx(payload: FxConfigIn, ctx: dict = Depends(require_admin)):
+    if payload.provider not in _FX_PROVIDERS:
+        raise HTTPException(status_code=400, detail=f"Unknown provider. Allowed: {list(_FX_PROVIDERS)}")
+    fx = {
+        "provider": payload.provider,
+        "manual_rate": max(0.0, float(payload.manual_rate)),
+        "buffer_pct": max(0.0, min(10.0, float(payload.buffer_pct))),
+        "cache_seconds": max(60, min(int(payload.cache_seconds), 24 * 3600)),
+    }
+    await db.settings.update_one(
+        {"id": "singleton"},
+        {"$set": {"fx": fx, "updated_at": now_iso()}},
+    )
+    return {"ok": True, "fx": fx}
+
+
+@api.get("/admin/fx/providers")
+async def admin_fx_providers(ctx: dict = Depends(require_admin)):
+    return {
+        "providers": [
+            {"key": k, "label": v["label"], "requires_manual_rate": (k == "manual")}
+            for k, v in _FX_PROVIDERS.items()
+        ]
+    }
+
+
+@api.get("/admin/fx/live")
+async def admin_fx_live(ctx: dict = Depends(require_admin)):
+    """Fetch the current USD → GHS rate right now (bypasses cache when possible)
+    so admins can preview what customers would be charged."""
+    settings = await get_settings()
+    try:
+        r = _fx_get_rate(settings.get("fx", {}))
+        # Example: convert $100 USD to see the buffered result
+        sample_100 = round(100.0 * r["buffered_rate"], 2)
+        return {"ok": True, **r, "sample_100_usd_to_ghs": sample_100}
+    except FxError as e:
+        return {"ok": False, "detail": str(e)}
 
 
 # ────────────────── MOUNT ──────────────────

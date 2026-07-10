@@ -56,15 +56,19 @@ def is_ready_for_live(config: dict) -> bool:
     return not is_sandbox(config) and not missing_live_fields(config)
 
 
-def initiate_checkout(config: dict, amount: float, description: str, tracking_no: str) -> dict:
+def initiate_checkout(config: dict, amount: float, description: str, tracking_no: str, currency: str = "GHS") -> dict:
     """Return {"checkout_url": str, "transaction_id": str, "sandbox": bool}.
+
+    `amount` is expected to already be denominated in `currency` (Hubtel
+    settles in GHS by default; callers should convert USD → GHS before
+    calling this function). `currency` is forwarded to Hubtel as-is.
 
     Raises HubtelNotConfiguredError when production mode is selected but any
     required credential field is empty."""
     tx_id = f"TX-{uuid.uuid4().hex[:10].upper()}"
 
     if is_sandbox(config):
-        logger.info(f"Hubtel SANDBOX (admin-selected): simulated checkout for {tracking_no} amount={amount}")
+        logger.info(f"Hubtel SANDBOX (admin-selected): simulated checkout for {tracking_no} amount={amount} {currency}")
         return {
             "checkout_url": f"/payment/sandbox?tx={tx_id}&tracking={tracking_no}",
             "transaction_id": tx_id,
@@ -84,9 +88,7 @@ def initiate_checkout(config: dict, amount: float, description: str, tracking_no
         "merchantAccountNumber": config.get("merchant_account_id"),
         "cancellationUrl": config.get("cancellation_url") or config.get("return_url", ""),
         "clientReference": tracking_no,
-        # Application-wide currency contract: prices are ALWAYS stored in USD.
-        # Hubtel converts USD → GHS at checkout time (multi-currency merchant setup required).
-        "currency": (config.get("currency") or "USD").upper(),
+        "currency": (currency or "GHS").upper(),
     }
     auth = (config["api_id"], config["api_key"])
     proxies = _proxies_from(config)

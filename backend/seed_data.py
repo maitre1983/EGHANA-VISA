@@ -41,6 +41,12 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "ga4_measurement_id": "",
     "gsc_verification": "",
     "clarity_project_id": "",
+    "fx": {
+        "provider": "open_er_api",
+        "manual_rate": 0.0,
+        "buffer_pct": 0.0,
+        "cache_seconds": 900,
+    },
     "r2": {
         "enabled": True,
         "account_id": "",

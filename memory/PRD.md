@@ -134,6 +134,24 @@ Build a full-stack Ghana Visa On Arrival web application for **eghanavisa.com** 
 - ✅ Signed-URL endpoint returns clean fallback (`{url:null, streaming_endpoint:...}`) for legacy files.
 - ⏳ End-to-end R2 upload + signed-URL download waiting on the user to paste real Cloudflare R2 credentials.
 
+## Iteration 18 (2026-02-08) — USD → GHS auto-conversion for Hubtel
+- **Reported**: Hubtel was charging customers `X GHS` when the visa was priced at `$X USD` — because we sent the raw USD amount and Hubtel treated it as GHS. On a $425 visa, customers were charged 425 GHS (~$36).
+- **Fix — new `fx_service.py`**:
+    - 4 configurable providers: **open.er-api.com** (default, free, no key), **fawazahmed0** (CDN, free), **frankfurter.app** (ECB rates, free), **Manual** (admin-entered rate)
+    - Automatic **cascade fallback** — tries the selected provider, then the two backups, and finally the manual rate if all network providers fail
+    - **Cache** (default 15 min TTL, admin-configurable 60s–24h) so checkouts don't hammer the FX API
+    - **Buffer %** — admin can add 0–10% safety margin for intraday FX drift between fetch and card settlement
+- **Fix — `payments/initiate` flow**:
+    - Only converts to GHS when Hubtel is in **production** mode (sandbox skips conversion)
+    - **Persists FX + charge metadata BEFORE the Hubtel HTTP call** so an upstream failure still leaves a complete audit trail
+    - Payment record now stores: `amount_usd` (original), `amount_charged` (GHS sent), `payment_currency`, and a full `fx` sub-doc with rate, applied-rate, buffer, provider, source URL, fetched_at, from_cache
+    - Gateway failures now return proper HTTP 502 with `code: hubtel_gateway_error`; FX unavailable returns 503 with `code: fx_unavailable`
+- **Admin UI**:
+    - New Settings tab **"Exchange Rate"** with live rate card (raw + buffered + $100 preview + source URL + fetched timestamp), 4 form fields, and Save + Refresh buttons
+    - New endpoints: `GET /api/admin/fx/providers`, `GET /api/admin/fx/live`, `POST /api/admin/settings/fx`
+- **Verified**: $350 USD visa → 350 × 11.5606 = **4046.21 GHS** sent to Hubtel. Full FX metadata persisted on the application record.
+- **Zero hardcoding** — provider list, rates, buffer, TTL all driven by admin DB.
+
 ## Iteration 17 (2026-02-08) — 150+ Nationality SEO Landing Pages (P0)
 - ✅ New dataset `/app/frontend/src/data/nationalityData.js` with **196 countries**, each with: country name, URL slug (`us-citizens`, `french-citizens`, …), demonym ("U.S.", "French", …), ISO2 code, region, capital, common departure airport, ECOWAS exempt flag, computed 🇺🇸 flag emoji.
 - ✅ New dynamic page `NationalityLanding.jsx` served at `/visa-for-{slug}` — one unique landing per country with:

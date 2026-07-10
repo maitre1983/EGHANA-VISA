@@ -12,7 +12,7 @@ const AI_MODELS = [
     "gemini-3-flash-preview",
 ];
 
-const SEC = { prices: "Visa Prices", types: "Visa Types", methods: "Payment Methods", hubtel: "Hubtel API", nowpayments: "NowPayments (USDT)", storage: "Storage (R2)", other: "WhatsApp & AI", analytics: "Analytics IDs", danger: "Danger Zone" };
+const SEC = { prices: "Visa Prices", types: "Visa Types", methods: "Payment Methods", hubtel: "Hubtel API", fx: "Exchange Rate", nowpayments: "NowPayments (USDT)", storage: "Storage (R2)", other: "WhatsApp & AI", analytics: "Analytics IDs", danger: "Danger Zone" };
 
 export default function AdminSettings() {
     const [tab, setTab] = useState("prices");
@@ -131,6 +131,7 @@ export default function AdminSettings() {
                 )}
                 {tab === "analytics" && <AnalyticsIdsForm initial={s} onReload={reload} />}
                 {tab === "storage" && <R2StorageForm initial={s} onReload={reload} />}
+                {tab === "fx" && <FxForm initial={s} onReload={reload} />}
                 {tab === "danger" && <DangerZone onReload={reload} />}
             </div>
         </div>
@@ -631,6 +632,121 @@ const R2StorageForm = ({ initial, onReload }) => {
 {env}/invoices/{tracking_no}/…
 {env}/exports/{yyyy-mm-dd}/…`}</pre>
                 <div className="text-[11px] text-slate-500 mt-2">Bucket must stay private. Downloads are served exclusively via short-lived pre-signed URLs. When an application (or the Danger Zone wipe) deletes records, the corresponding R2 folder is purged automatically.</div>
+            </div>
+        </div>
+    );
+};
+
+
+const FxForm = ({ initial, onReload }) => {
+    const cur = initial?.fx || { provider: "open_er_api", manual_rate: 0, buffer_pct: 0, cache_seconds: 900 };
+    const [f, setF] = useState(cur);
+    const [providers, setProviders] = useState([]);
+    const [live, setLive] = useState(null);
+    const [busy, setBusy] = useState(false);
+    const set = (k, v) => setF((old) => ({ ...old, [k]: v }));
+
+    useEffect(() => {
+        (async () => {
+            try {
+                const [{ data: p }, { data: l }] = await Promise.all([
+                    api.get("/admin/fx/providers"),
+                    api.get("/admin/fx/live"),
+                ]);
+                setProviders(p.providers || []);
+                setLive(l);
+            } catch (e) { /* ignore */ }
+        })();
+    }, []);
+
+    const save = async () => {
+        setBusy(true);
+        try {
+            await api.post("/admin/settings/fx", f);
+            toast.success("Exchange-rate configuration saved");
+            const { data: l } = await api.get("/admin/fx/live"); setLive(l);
+            onReload();
+        } catch (e) { toast.error(e?.response?.data?.detail || "Save failed"); }
+        finally { setBusy(false); }
+    };
+    const refresh = async () => {
+        setBusy(true);
+        try {
+            const { data: l } = await api.get("/admin/fx/live"); setLive(l);
+            if (l.ok) toast.success(`Live rate: 1 USD = ${l.rate} GHS`);
+            else toast.error(l.detail || "Failed to fetch rate");
+        } finally { setBusy(false); }
+    };
+
+    return (
+        <div className="space-y-5">
+            {live && (
+                <div className={`rounded-xl border p-5 ${live.ok ? "bg-ghana-green/5 border-ghana-green/40" : "bg-ghana-red/5 border-ghana-red/40"}`}>
+                    {live.ok ? (
+                        <div className="grid md:grid-cols-4 gap-4 text-sm">
+                            <div>
+                                <div className="text-[11px] uppercase tracking-widest text-slate-500 font-semibold">Current rate</div>
+                                <div className="font-heading font-bold text-2xl text-ghana-green-dark mt-1" data-testid="fx-live-rate">1 USD = {live.rate} GHS</div>
+                            </div>
+                            <div>
+                                <div className="text-[11px] uppercase tracking-widest text-slate-500 font-semibold">Applied (with buffer)</div>
+                                <div className="font-mono mt-1">{live.buffered_rate} <span className="text-slate-500 text-xs">(+{live.buffer_pct}%)</span></div>
+                            </div>
+                            <div>
+                                <div className="text-[11px] uppercase tracking-widest text-slate-500 font-semibold">Provider</div>
+                                <div className="mt-1">{live.provider}</div>
+                            </div>
+                            <div>
+                                <div className="text-[11px] uppercase tracking-widest text-slate-500 font-semibold">$100 = ?</div>
+                                <div className="font-mono mt-1">{live.sample_100_usd_to_ghs} GHS</div>
+                            </div>
+                            <div className="md:col-span-4 text-[11px] text-slate-500">Source: <a href={live.source_url} target="_blank" rel="noreferrer" className="underline">{live.source_url}</a> · Fetched {live.fetched_at} · {live.from_cache ? "from cache" : "fresh"}</div>
+                        </div>
+                    ) : (
+                        <div className="text-sm text-ghana-red"><strong>✘ Rate unavailable:</strong> {live.detail}</div>
+                    )}
+                </div>
+            )}
+
+            <div className="bg-white border border-black/10 rounded-xl p-6 space-y-4">
+                <div className="font-heading font-semibold">USD → GHS conversion for Hubtel checkout</div>
+                <p className="text-xs text-slate-500 -mt-2">Applied automatically before every Hubtel checkout. All visa prices remain stored in USD; only the amount sent to Hubtel is converted. Every payment record persists the original USD amount, the charged GHS amount, the rate used and the timestamp for reconciliation.</p>
+
+                <div className="grid md:grid-cols-2 gap-4">
+                    <div>
+                        <label className="text-xs uppercase tracking-wider text-slate-600 font-medium">Provider</label>
+                        <select value={f.provider} onChange={(e) => set("provider", e.target.value)} data-testid="fx-provider"
+                            className="mt-1.5 w-full border border-black/10 rounded-md px-3 py-2.5 text-sm bg-white focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none">
+                            {providers.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="text-xs uppercase tracking-wider text-slate-600 font-medium">Manual rate (used when provider = Manual, or as fallback)</label>
+                        <input type="number" step="0.0001" value={f.manual_rate} onChange={(e) => set("manual_rate", parseFloat(e.target.value || "0"))} data-testid="fx-manual-rate"
+                            className="mt-1.5 w-full border border-black/10 rounded-md px-3 py-2.5 text-sm font-mono focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none" />
+                    </div>
+                    <div>
+                        <label className="text-xs uppercase tracking-wider text-slate-600 font-medium">Buffer % (safety margin for intraday drift)</label>
+                        <input type="number" step="0.1" min="0" max="10" value={f.buffer_pct} onChange={(e) => set("buffer_pct", parseFloat(e.target.value || "0"))} data-testid="fx-buffer-pct"
+                            className="mt-1.5 w-full border border-black/10 rounded-md px-3 py-2.5 text-sm font-mono focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none" />
+                        <div className="text-[11px] text-slate-500 mt-1">e.g. 1% covers small overnight FX drift. Max 10%.</div>
+                    </div>
+                    <div>
+                        <label className="text-xs uppercase tracking-wider text-slate-600 font-medium">Cache TTL (seconds)</label>
+                        <input type="number" min="60" max="86400" value={f.cache_seconds} onChange={(e) => set("cache_seconds", parseInt(e.target.value || "0", 10))} data-testid="fx-cache-seconds"
+                            className="mt-1.5 w-full border border-black/10 rounded-md px-3 py-2.5 text-sm font-mono focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none" />
+                        <div className="text-[11px] text-slate-500 mt-1">Default 900s (15 min). We don&apos;t hit the FX API on every checkout.</div>
+                    </div>
+                </div>
+
+                <div className="flex gap-2 flex-wrap">
+                    <button onClick={save} disabled={busy} data-testid="fx-save" className="bg-ghana-green text-white px-5 py-2.5 rounded-md text-sm font-medium inline-flex items-center gap-2 hover:bg-ghana-green-dark disabled:opacity-50">
+                        <Save size={14} /> Save FX configuration
+                    </button>
+                    <button onClick={refresh} disabled={busy} data-testid="fx-refresh" className="border border-ghana-green text-ghana-green px-5 py-2.5 rounded-md text-sm font-medium hover:bg-ghana-green/5 disabled:opacity-50">
+                        Refresh live rate
+                    </button>
+                </div>
             </div>
         </div>
     );
