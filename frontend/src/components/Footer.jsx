@@ -27,6 +27,7 @@ export default function Footer() {
                     <ul className="space-y-2 text-sm">
                         <li><Link to="/faq" className="hover:text-ghana-gold" data-testid="footer-faq">FAQ</Link></li>
                         <li><Link to="/terms" className="hover:text-ghana-gold" data-testid="footer-terms">Terms &amp; Conditions</Link></li>
+                        <li><Link to="/visa-by-nationality" className="hover:text-ghana-gold" data-testid="footer-nationality">Visa by nationality</Link></li>
                         <li><Link to="/privacy" className="hover:text-ghana-gold" data-testid="footer-privacy">Privacy Policy</Link></li>
                         <li><Link to="/disclaimer" className="hover:text-ghana-gold" data-testid="footer-disclaimer">Disclaimer</Link></li>
                         <li><button type="button" onClick={() => window.dispatchEvent(new CustomEvent("egv:consent-open"))} className="hover:text-ghana-gold text-left" data-testid="footer-cookie-preferences">Cookie preferences</button></li>

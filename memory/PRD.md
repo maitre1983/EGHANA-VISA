@@ -134,6 +134,22 @@ Build a full-stack Ghana Visa On Arrival web application for **eghanavisa.com** 
 - ✅ Signed-URL endpoint returns clean fallback (`{url:null, streaming_endpoint:...}`) for legacy files.
 - ⏳ End-to-end R2 upload + signed-URL download waiting on the user to paste real Cloudflare R2 credentials.
 
+## Iteration 17 (2026-02-08) — 150+ Nationality SEO Landing Pages (P0)
+- ✅ New dataset `/app/frontend/src/data/nationalityData.js` with **196 countries**, each with: country name, URL slug (`us-citizens`, `french-citizens`, …), demonym ("U.S.", "French", …), ISO2 code, region, capital, common departure airport, ECOWAS exempt flag, computed 🇺🇸 flag emoji.
+- ✅ New dynamic page `NationalityLanding.jsx` served at `/visa-for-{slug}` — one unique landing per country with:
+    - Country-specific meta title, description, canonical URL and JSON-LD (TravelAction or Article schema for ECOWAS)
+    - Distinct render for **ECOWAS-exempt states** (green "no visa required" banner, 90-day free-movement note) vs non-ECOWAS (full requirements + fees + step-by-step guide)
+    - Fact cards (Processing time · Passport requirement · Photo · Departure airport)
+    - "Related nationalities" chips linking same-region countries → strong internal linking for SEO
+    - CTA that fires `apply_click` analytics event with `source=nationality-cta`
+    - Independent-third-party compliance disclaimer
+- ✅ New index page `NationalityIndex.jsx` served at `/visa-by-nationality` — searchable A-Z directory grouped by region (Africa, Asia, Caribbean, Central America, Europe, Europe/Asia, Middle East, North America, Oceania, South America, West Africa) with region filter buttons and search box.
+- ✅ **Fixed React Router v6 pattern bug** discovered during smoke test — `/visa-for-:slug` didn't match `/visa-for-us-citizens` because v6 requires dynamic params to occupy a whole path segment. Solved by generating explicit `<Route>` for each of the 196 slugs from the dataset (`NATIONALITY_LIST.map`). Page now derives slug from `useLocation().pathname`.
+- ✅ `sitemap.xml` regenerated — now contains 216 URLs (base + guide pages + 196 nationality pages + directory).
+- ✅ Footer link "Visa by nationality" added for permanent access + SEO discoverability.
+- ✅ Verified end-to-end: `/visa-for-us-citizens` shows 🇺🇸 flag + "Ghana Visa for U.S. Citizens" H1; `/visa-for-nigerian-citizens` shows green ECOWAS banner; `/visa-by-nationality` shows all 196 links grouped by region.
+- ✅ `yarn build` passes (28.7s, 285KB gzip main bundle).
+
 ## Iteration 16 (2026-02-08) — Hubtel silent-sandbox-fallback bug fix
 - **Reported**: on production eghanavisa.com the payment page showed *"Payment gateway in SANDBOX mode"* and opened *"Hubtel Sandbox Checkout"* even though the admin had switched Hubtel to production mode and pasted keys.
 - **Root cause**: `hubtel_service.is_sandbox()` had a silent fallback — if `sandbox=false` **but any of `api_id/api_key/merchant_account_id` was empty**, it still returned `True`. So any single missing/mistyped field silently downgraded real payments to a mock checkout, with no visible admin warning.

@@ -16,6 +16,9 @@ import FAQ from "./pages/FAQ";
 import Terms from "./pages/Terms";
 import Privacy from "./pages/Privacy";
 import SeoLanding from "./pages/SeoLanding";
+import NationalityLanding from "./pages/NationalityLanding";
+import NationalityIndex from "./pages/NationalityIndex";
+import { NATIONALITY_LIST } from "./data/nationalityData";
 
 import AdminLogin from "./pages/AdminLogin";
 import AdminChangePassword from "./pages/AdminChangePassword";
@@ -55,6 +58,10 @@ function App() {
                         <Route path="/ghana-travel-guide" element={<SeoLanding />} />
                         <Route path="/ghana-visa-faq" element={<SeoLanding />} />
                         <Route path="/disclaimer" element={<SeoLanding />} />
+                        <Route path="/visa-by-nationality" element={<NationalityIndex />} />
+                        {NATIONALITY_LIST.map((n) => (
+                            <Route key={n.slug} path={`/visa-for-${n.slug}`} element={<NationalityLanding />} />
+                        ))}
                     </Route>
 
                     <Route path="/admin" element={<AdminLogin />} />
