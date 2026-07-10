@@ -10,7 +10,7 @@ export default function Prices() {
     return (
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-14">
             <div className="text-xs uppercase tracking-[0.25em] text-ghana-green font-semibold">Pricing</div>
-            <h1 className="mt-2 text-3xl md:text-5xl font-heading font-bold">Transparent, official prices</h1>
+            <h1 className="mt-2 text-3xl md:text-5xl font-heading font-bold">Transparent pricing</h1>
             <p className="mt-3 text-slate-600 max-w-xl">All prices in USD. Express processing surcharge: <strong>+${config?.express_surcharge_usd || 0}</strong>.</p>
 
             <div className="mt-10 grid md:grid-cols-3 gap-6">
