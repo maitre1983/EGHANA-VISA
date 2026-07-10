@@ -134,6 +134,22 @@ Build a full-stack Ghana Visa On Arrival web application for **eghanavisa.com** 
 - ✅ Signed-URL endpoint returns clean fallback (`{url:null, streaming_endpoint:...}`) for legacy files.
 - ⏳ End-to-end R2 upload + signed-URL download waiting on the user to paste real Cloudflare R2 credentials.
 
+## Iteration 19 (2026-02-08) — Home banner removed + Abena Phase 1 (live context + escalation)
+- ✅ Removed the top-of-Home legal disclaimer banner (still present in Footer where users expect it).
+- ✅ **Abena live-data grounding**: `ama_chat.py` now injects a fresh JSON `LIVE PLATFORM DATA` block into the system prompt on every message. Contains current visa types + prices (from admin settings), processing tiers + surcharges, payment methods, USDT discount, required documents, tracking format, ECOWAS list, WhatsApp, refund/overstay policy. Whenever an admin updates a price in the dashboard, Abena's next reply uses the new value automatically — **zero hallucination on prices/processing times** verified (Abena quoted the real $350 USD tourist price).
+- ✅ **Auto-escalation with ticketing**: Abena's system prompt now emits an `[ESCALATE]` token when the customer asks for a human, expresses frustration, or the question is a status/refund/complaint. `POST /api/chat` detects the token, strips it from the reply, creates a `support_tickets` document (customer name/email/tracking/question/AI-reply/status/timestamps), and fires the admin notification email.
+- ✅ **New admin endpoints**: `GET /api/admin/support-tickets?status=open` (queue) + `POST /api/admin/support-tickets/{id}/reply` (compose reply, optionally close; emails the customer if their address was captured).
+- ✅ **AbenaChat.jsx** upgraded: shows the "Transferred to human · Ticket XXXXX" badge on escalated messages; when escalation happens without a captured email, prompts the customer for name + email so ops can reach them. New header tagline: "AI Support · Live 24/7".
+
+### Deliberately deferred to future iterations (per user's Enterprise-scope brief)
+- **SMS provider integration** (Twilio/Africa's Talking/other) — needs API keys from user; will build once they choose a provider
+- **Multilingual pass** — Abena already respects the user's language via prompt, but a formal supported-language config in admin needs a separate iteration
+- **Learning system** (admin-approved answers become part of RAG) — requires vector store; deferred
+- **AI analytics dashboard** — will piggyback on the existing `/admin/analytics` framework
+- **Working-hours / after-hours rules, emergency keywords, temperature/model tuning UI** — needs a dedicated "Abena Settings" tab
+- **Performance pass** (Core Web Vitals, code splitting, image opt, DB query opt) — deserves its own audit iteration
+- **Retry/graceful-degradation on external provider failures** — partially in place (FX cascade + Hubtel 502/503), extend to email/SMS in next pass
+
 ## Iteration 18 (2026-02-08) — USD → GHS auto-conversion for Hubtel
 - **Reported**: Hubtel was charging customers `X GHS` when the visa was priced at `$X USD` — because we sent the raw USD amount and Hubtel treated it as GHS. On a $425 visa, customers were charged 425 GHS (~$36).
 - **Fix — new `fx_service.py`**:

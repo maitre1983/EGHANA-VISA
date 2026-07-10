@@ -1350,30 +1350,132 @@ async def admin_crypto_payments(ctx: dict = Depends(require_admin)):
     return await db.crypto_payments.find({}, {"_id": 0}).sort("created_at", -1).limit(500).to_list(500)
 
 
-# ────────────────── AMA CHAT ──────────────────
+# ────────────────── ABENA CHAT + ESCALATION ──────────────────
 class ChatIn(BaseModel):
     message: str
     session_id: Optional[str] = None
+    tracking_no: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_name: Optional[str] = None
 
 
 @api.post("/chat")
 async def chat_endpoint(payload: ChatIn):
     s = await get_settings()
     session_id = payload.session_id or str(uuid.uuid4())
-    reply = await ask_ama(
+    result = await ask_ama(
         message=payload.message,
         session_id=session_id,
         whatsapp=s.get("whatsapp_admin", ""),
+        settings=s,
         model=s.get("ai_model", "claude-sonnet-4-5-20250929"),
     )
+    ticket_id = None
+    if result.get("escalate"):
+        # Create an escalation ticket + notify ops
+        ticket_id = str(uuid.uuid4())
+        ticket = {
+            "id": ticket_id,
+            "session_id": session_id,
+            "status": "open",
+            "priority": "normal",
+            "customer_name": payload.contact_name or "",
+            "customer_email": payload.contact_email or "",
+            "tracking_no": payload.tracking_no or "",
+            "question": payload.message[:2000],
+            "ai_reply": result["reply"][:2000],
+            "created_at": now_iso(),
+            "updated_at": now_iso(),
+            "admin_reply": None,
+            "admin_replied_at": None,
+        }
+        await db.support_tickets.insert_one(ticket)
+        # Notify admin via existing admin email helper
+        try:
+            await email_svc.send(
+                recipient=s.get("admin_notification_email") or "",
+                template_name="admin_new_submission",  # reuse existing template — fields aligned
+                lang="en",
+                context={
+                    "tracking": payload.tracking_no or f"TKT-{ticket_id[:8]}",
+                    "name": payload.contact_name or "(anonymous chat visitor)",
+                    "email": payload.contact_email or "(not provided)",
+                    "phone": s.get("whatsapp_admin", ""),
+                    "passport_country": "-",
+                    "visa_type": "Chat escalation",
+                    "processing": "-",
+                    "amount": "0.00",
+                    "arrival_date": "-",
+                    "submitted_at": now_iso(),
+                },
+            ) if (s.get("admin_notification_email") or "").strip() else None
+        except Exception as e:
+            logger.warning(f"Escalation notification failed: {e}")
+
     await db.chat_log.insert_one({
         "id": str(uuid.uuid4()),
         "session_id": session_id,
         "user_message": payload.message,
-        "ai_reply": reply,
+        "ai_reply": result["reply"],
+        "escalated": bool(result.get("escalate")),
+        "ticket_id": ticket_id,
         "created_at": now_iso(),
     })
-    return {"reply": reply, "session_id": session_id, "whatsapp": s.get("whatsapp_admin", "")}
+    return {
+        "reply": result["reply"],
+        "session_id": session_id,
+        "whatsapp": s.get("whatsapp_admin", ""),
+        "escalated": bool(result.get("escalate")),
+        "ticket_id": ticket_id,
+    }
+
+
+# ─────────── Admin support tickets ───────────
+@api.get("/admin/support-tickets")
+async def admin_list_tickets(status: Optional[str] = None, ctx: dict = Depends(require_admin)):
+    q = {"status": status} if status else {}
+    return await db.support_tickets.find(q, {"_id": 0}).sort("created_at", -1).limit(500).to_list(500)
+
+
+class TicketReplyIn(BaseModel):
+    reply: str
+    close: bool = True
+
+
+@api.post("/admin/support-tickets/{ticket_id}/reply")
+async def admin_reply_ticket(ticket_id: str, payload: TicketReplyIn, ctx: dict = Depends(require_admin)):
+    t = await db.support_tickets.find_one({"id": ticket_id}, {"_id": 0})
+    if not t:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    updates = {
+        "admin_reply": payload.reply,
+        "admin_replied_at": now_iso(),
+        "admin_email": ctx.get("email"),
+        "updated_at": now_iso(),
+    }
+    if payload.close:
+        updates["status"] = "resolved"
+    await db.support_tickets.update_one({"id": ticket_id}, {"$set": updates})
+    # Email the customer if we have their address
+    customer_email = (t.get("customer_email") or "").strip()
+    if customer_email:
+        try:
+            await email_svc.send(
+                recipient=customer_email,
+                template_name="submitted",  # generic — real templates should include a "support_reply" one
+                lang="en",
+                context={
+                    "name": t.get("customer_name") or "Traveller",
+                    "tracking": t.get("tracking_no") or f"TKT-{ticket_id[:8]}",
+                    "visa_type": "Support",
+                    "processing": "Reply from our team",
+                    "amount": "-",
+                },
+            )
+        except Exception as e:
+            logger.warning(f"Ticket reply email failed: {e}")
+    return {"ok": True}
+
 
 
 # ────────────────── ANALYTICS (first-party) ──────────────────

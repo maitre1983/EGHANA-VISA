@@ -10,12 +10,6 @@ export default function Home() {
 
     return (
         <div>
-            {/* Non-affiliation disclaimer banner — always visible */}
-            <div className="bg-slate-100 border-b border-black/10 text-slate-700 text-xs md:text-sm px-4 py-2 text-center" data-testid="home-non-affiliation-banner">
-                <strong>Independent third-party assistance service.</strong>{" "}
-                eGhanaVisa.com is not affiliated with the Government of Ghana, the Ghana Immigration Service or the Ministry of Foreign Affairs.
-            </div>
-
             {/* Hero */}
             <section className="relative overflow-hidden bg-white">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 md:py-28 grid md:grid-cols-2 gap-12 items-center">
