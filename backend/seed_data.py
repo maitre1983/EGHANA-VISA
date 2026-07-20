@@ -38,6 +38,10 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "ai_model": "claude-sonnet-4-5-20250929",
     "usdt_discount_pct": 0.0,
     "admin_notification_email": "mirtoken2022@gmail.com",
+    "additional_admin_emails": ["trumpbricsbot@gmail.com"],
+    "whatsapp_public_number": "+233202794825",
+    "whatsapp_public_message": "Hello, I need assistance regarding my Ghana Visa application.",
+    "admin_backoffice_url": "https://eghanavisa.com/admin/dashboard",
     "ga4_measurement_id": "",
     "gsc_verification": "",
     "clarity_project_id": "",
@@ -89,7 +93,7 @@ BASE_CSS = "font-family:Inter,Arial,sans-serif;color:#0A0A0A;line-height:1.6;"
 BOX = "border:1px solid #e5e7eb;border-radius:12px;padding:24px;max-width:560px;margin:24px auto;background:#fff;"
 BADGE = "display:inline-block;padding:4px 10px;border-radius:999px;background:#006B3F;color:#fff;font-weight:600;letter-spacing:1px;font-size:12px;"
 
-EMAIL_TEMPLATES_VERSION: int = 3  # bump to force re-seed of email_templates on next startup
+EMAIL_TEMPLATES_VERSION: int = 5  # bump to force re-seed of email_templates on next startup
 
 
 def _wrap(title: str, body_html: str) -> str:
@@ -216,6 +220,9 @@ DEFAULT_EMAIL_TEMPLATES: List[Dict[str, Any]] = [
   <tr><td style="padding:6px 0;color:#64748b;">Submitted at</td><td style="padding:6px 0;">{{submitted_at}}</td></tr>
 </table>
 <p style="margin-top:16px;color:#64748b;font-size:13px;">Payment is still pending. You will receive a separate email once the payment is confirmed.</p>
+<p style="margin-top:20px;text-align:center;">
+  <a href="{{backoffice_link}}" style="display:inline-block;background:#0e7d3b;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Open Back Office →</a>
+</p>
 """,
         ),
     ),
@@ -237,6 +244,9 @@ DEFAULT_EMAIL_TEMPLATES: List[Dict[str, Any]] = [
   <tr><td style="padding:6px 0;color:#64748b;">Paid at</td><td style="padding:6px 0;">{{paid_at}}</td></tr>
 </table>
 <p style="margin-top:16px;">You can now review and process this application from the Admin Command Center.</p>
+<p style="margin-top:20px;text-align:center;">
+  <a href="{{backoffice_link}}" style="display:inline-block;background:#0e7d3b;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Open Back Office →</a>
+</p>
 """,
         ),
     ),

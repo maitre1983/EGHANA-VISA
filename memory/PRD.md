@@ -217,3 +217,23 @@ Build a full-stack Ghana Visa On Arrival web application for **eghanavisa.com** 
 - Application archive & export CSV
 - Rich analytics (nationality mix, weekly trends)
 - Cloudflare R2 storage backend (interface already prepared)
+
+
+## Iteration 13 (2026-02-20) — WhatsApp button + fan-out admin notifications
+- ✅ **Additional admin recipients**: New `additional_admin_emails` list in settings, seeded with `trumpbricsbot@gmail.com`. `_notify_admin()` now fans out every admin notification (new_submission + payment_success) to the primary email AND every entry in this list.
+- ✅ **Back-office link in admin emails**: New `admin_backoffice_url` setting (default `https://eghanavisa.com/admin/dashboard`). Every admin email now contains an "Open Back Office →" button with `?tracking={tracking_no}` appended so admins jump straight to the application.
+- ✅ **Floating WhatsApp button** (`WhatsAppButton.jsx`): Fixed bottom-right, green ping halo, phone icon, live `href=wa.me/…?text=…` reading `whatsapp_public_number` + `whatsapp_public_message` from `/api/config`. Injected in `PublicLayout` so every public page renders it.
+- ✅ **Zero hardcoding** — number, message, additional emails, and back-office URL are all configurable in `Admin → Settings → WhatsApp & AI` tab.
+- New admin endpoints:
+    - `POST /api/admin/settings/additional-admin-emails` `{ additional_admin_emails: [] }`
+    - `POST /api/admin/settings/whatsapp-public` `{ whatsapp_public_number, whatsapp_public_message }`
+    - `POST /api/admin/settings/admin-backoffice-url` `{ admin_backoffice_url }`
+- Public `/api/config` exposes: `whatsapp_public_number`, `whatsapp_public_message`.
+- Email templates bumped to version 5 to inject the new "Open Back Office" call-to-action.
+- Verified end-to-end: created a real application, confirmed both `mirtoken2022@gmail.com` and `trumpbricsbot@gmail.com` received the notification with a working tracking-scoped link.
+
+## Backlog (P0/P1/P2 remaining)
+- **P0**: Abena Tickets Admin UI + SMS Integration (Admin Dashboard view for escalated tickets, SMS notif for admins).
+- **P1**: Abena Learning System + AI Analytics Dashboard.
+- **P2**: Performance optimizations (lazy loading, caching, CDN).
+- **P3**: Payment Gateway Health Monitoring (Hubtel / NowPayments ping).

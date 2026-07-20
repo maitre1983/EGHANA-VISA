@@ -71,18 +71,39 @@ def now_iso():
 
 
 async def _notify_admin(template_name: str, context: dict) -> None:
-    """Fire-and-forget internal ops email. Never breaks the caller if email fails."""
+    """Fire-and-forget internal ops email. Never breaks the caller if email fails.
+    Fans out to the primary admin_notification_email + any additional_admin_emails."""
     try:
         s = await get_settings()
-        recipient = (s.get("admin_notification_email") or "").strip()
-        if not recipient:
+        recipients: list[str] = []
+        primary = (s.get("admin_notification_email") or "").strip()
+        if primary:
+            recipients.append(primary)
+        for extra in (s.get("additional_admin_emails") or []):
+            e = (extra or "").strip()
+            if e and e not in recipients:
+                recipients.append(e)
+        if not recipients:
             return
-        await email_svc.send(
-            recipient=recipient,
-            template_name=template_name,
-            lang="en",
-            context=context,
-        )
+        # Inject a back-office link so admins can jump straight to the record.
+        tracking = context.get("tracking", "")
+        base_url = (s.get("admin_backoffice_url") or "").strip().rstrip("/")
+        if base_url and tracking:
+            ctx = {**context, "backoffice_link": f"{base_url}?tracking={tracking}"}
+        elif base_url:
+            ctx = {**context, "backoffice_link": base_url}
+        else:
+            ctx = {**context, "backoffice_link": ""}
+        for rcpt in recipients:
+            try:
+                await email_svc.send(
+                    recipient=rcpt,
+                    template_name=template_name,
+                    lang="en",
+                    context=ctx,
+                )
+            except Exception as inner:
+                logger.warning(f"Admin notification failed for {rcpt} ({template_name}): {inner}")
     except Exception as e:
         logger.warning(f"Admin notification failed ({template_name}): {e}")
 
@@ -146,6 +167,14 @@ async def _seed_or_migrate_settings() -> None:
         updates["priority_surcharge_usd"] = DEFAULT_SETTINGS["priority_surcharge_usd"]
     if "admin_notification_email" not in existing:
         updates["admin_notification_email"] = DEFAULT_SETTINGS["admin_notification_email"]
+    if "additional_admin_emails" not in existing:
+        updates["additional_admin_emails"] = DEFAULT_SETTINGS["additional_admin_emails"]
+    if "whatsapp_public_number" not in existing:
+        updates["whatsapp_public_number"] = DEFAULT_SETTINGS["whatsapp_public_number"]
+    if "whatsapp_public_message" not in existing:
+        updates["whatsapp_public_message"] = DEFAULT_SETTINGS["whatsapp_public_message"]
+    if "admin_backoffice_url" not in existing:
+        updates["admin_backoffice_url"] = DEFAULT_SETTINGS["admin_backoffice_url"]
     for k in ("ga4_measurement_id", "gsc_verification", "clarity_project_id"):
         if k not in existing:
             updates[k] = ""
@@ -271,6 +300,8 @@ async def public_config():
         "express_surcharge_usd": s.get("express_surcharge_usd", 50.0),
         "max_upload_mb": s.get("max_upload_mb", 8),
         "whatsapp_admin": s.get("whatsapp_admin", ""),
+        "whatsapp_public_number": s.get("whatsapp_public_number", ""),
+        "whatsapp_public_message": s.get("whatsapp_public_message", ""),
         "hubtel_sandbox": is_sandbox(h_cfg),
         "hubtel_ready": _hubtel_ready(h_cfg),
         "hubtel_missing_fields": [] if is_sandbox(h_cfg) else _hubtel_missing(h_cfg),
@@ -942,6 +973,60 @@ async def admin_update_notification_email(payload: AdminNotificationEmailIn, ctx
         {"$set": {"admin_notification_email": email, "updated_at": now_iso()}},
     )
     return {"ok": True, "admin_notification_email": email}
+
+
+class AdditionalAdminEmailsIn(BaseModel):
+    additional_admin_emails: List[str] = []
+
+
+@api.post("/admin/settings/additional-admin-emails")
+async def admin_update_additional_emails(payload: AdditionalAdminEmailsIn, ctx: dict = Depends(require_admin)):
+    cleaned: list[str] = []
+    for raw in payload.additional_admin_emails:
+        e = (raw or "").strip()
+        if not e:
+            continue
+        if "@" not in e:
+            raise HTTPException(status_code=400, detail=f"Invalid email: {e}")
+        if e not in cleaned:
+            cleaned.append(e)
+    await db.settings.update_one(
+        {"id": "singleton"},
+        {"$set": {"additional_admin_emails": cleaned, "updated_at": now_iso()}},
+    )
+    return {"ok": True, "additional_admin_emails": cleaned}
+
+
+class WhatsAppPublicIn(BaseModel):
+    whatsapp_public_number: str = ""
+    whatsapp_public_message: str = ""
+
+
+@api.post("/admin/settings/whatsapp-public")
+async def admin_update_whatsapp_public(payload: WhatsAppPublicIn, ctx: dict = Depends(require_admin)):
+    await db.settings.update_one(
+        {"id": "singleton"},
+        {"$set": {
+            "whatsapp_public_number": (payload.whatsapp_public_number or "").strip(),
+            "whatsapp_public_message": (payload.whatsapp_public_message or "").strip(),
+            "updated_at": now_iso(),
+        }},
+    )
+    return {"ok": True}
+
+
+class AdminBackofficeUrlIn(BaseModel):
+    admin_backoffice_url: str = ""
+
+
+@api.post("/admin/settings/admin-backoffice-url")
+async def admin_update_backoffice_url(payload: AdminBackofficeUrlIn, ctx: dict = Depends(require_admin)):
+    url = (payload.admin_backoffice_url or "").strip()
+    await db.settings.update_one(
+        {"id": "singleton"},
+        {"$set": {"admin_backoffice_url": url, "updated_at": now_iso()}},
+    )
+    return {"ok": True, "admin_backoffice_url": url}
 
 
 class AIModelIn(BaseModel):

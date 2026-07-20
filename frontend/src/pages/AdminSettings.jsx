@@ -55,6 +55,22 @@ export default function AdminSettings() {
         }
     };
     const saveWhatsapp = async (v) => { await api.post("/admin/settings/whatsapp", { whatsapp_admin: v }); toast.success("Saved"); reload(); };
+    const saveWhatsappPublic = async (number, message) => {
+        await api.post("/admin/settings/whatsapp-public", { whatsapp_public_number: number, whatsapp_public_message: message });
+        toast.success("Saved"); reload();
+    };
+    const saveBackofficeUrl = async (v) => {
+        await api.post("/admin/settings/admin-backoffice-url", { admin_backoffice_url: v });
+        toast.success("Saved"); reload();
+    };
+    const saveAdditionalEmails = async (list) => {
+        try {
+            await api.post("/admin/settings/additional-admin-emails", { additional_admin_emails: list });
+            toast.success("Additional admin emails saved"); reload();
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || "Save failed");
+        }
+    };
     const saveAI = async (v) => { await api.post("/admin/settings/ai-model", { ai_model: v }); toast.success("Saved"); reload(); };
     const saveAdminEmail = async (v) => {
         try {
@@ -127,6 +143,30 @@ export default function AdminSettings() {
                             />
                             <div className="text-xs text-slate-500 mt-2">Sent when a new application is submitted AND when its payment succeeds. Leave empty to disable internal notifications.</div>
                         </Card>
+                        <Card title="Additional admin recipients (CC on every notification)">
+                            <AdditionalEmailsEditor
+                                initial={s.additional_admin_emails || []}
+                                onSave={saveAdditionalEmails}
+                            />
+                            <div className="text-xs text-slate-500 mt-2">Extra addresses that receive the same admin notifications (new submission + payment success). One per row.</div>
+                        </Card>
+                        <Card title="Back-office link included in admin emails">
+                            <TextRow
+                                initial={s.admin_backoffice_url || ""}
+                                onSave={saveBackofficeUrl}
+                                testid="admin-backoffice-url"
+                                placeholder="https://eghanavisa.com/admin/dashboard"
+                            />
+                            <div className="text-xs text-slate-500 mt-2">Base URL used to build the &quot;Open Back Office&quot; button in admin notification emails. The tracking number is appended automatically as a query param.</div>
+                        </Card>
+                        <Card title="Public WhatsApp button (visible on every page)">
+                            <WhatsappPublicEditor
+                                initialNumber={s.whatsapp_public_number || ""}
+                                initialMessage={s.whatsapp_public_message || ""}
+                                onSave={saveWhatsappPublic}
+                            />
+                            <div className="text-xs text-slate-500 mt-2">Digits only, international format. Message is pre-filled when a visitor taps the floating WhatsApp icon.</div>
+                        </Card>
                     </>
                 )}
                 {tab === "analytics" && <AnalyticsIdsForm initial={s} onReload={reload} />}
@@ -168,6 +208,67 @@ const TextRow = ({ initial, onSave, testid, placeholder }) => {
         </div>
     );
 };
+
+const AdditionalEmailsEditor = ({ initial, onSave }) => {
+    // Editable list of comma/newline-separated emails.
+    const toText = (arr) => (arr || []).join("\n");
+    const [text, setText] = useState(toText(initial));
+    useEffect(() => setText(toText(initial)), [initial]);
+    const save = () => {
+        const list = text.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean);
+        onSave(list);
+    };
+    return (
+        <div className="flex flex-col gap-2">
+            <textarea
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                data-testid="additional-admin-emails"
+                rows={3}
+                placeholder="trumpbricsbot@gmail.com&#10;another@example.com"
+                className="w-full border border-black/10 rounded-md px-3 py-2.5 text-sm font-mono focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none"
+            />
+            <div>
+                <button onClick={save} data-testid="additional-admin-emails-save" className="bg-ghana-green text-white px-4 py-2.5 rounded-md text-sm font-medium inline-flex items-center gap-2 hover:bg-ghana-green-dark"><Save size={14} /> Save list</button>
+            </div>
+        </div>
+    );
+};
+
+const WhatsappPublicEditor = ({ initialNumber, initialMessage, onSave }) => {
+    const [number, setNumber] = useState(initialNumber);
+    const [message, setMessage] = useState(initialMessage);
+    useEffect(() => { setNumber(initialNumber); setMessage(initialMessage); }, [initialNumber, initialMessage]);
+    return (
+        <div className="flex flex-col gap-3">
+            <div>
+                <label className="text-xs uppercase tracking-wider text-slate-600 font-medium">Number (international format)</label>
+                <input
+                    value={number}
+                    onChange={(e) => setNumber(e.target.value)}
+                    data-testid="whatsapp-public-number"
+                    placeholder="+233202794825"
+                    className="mt-1.5 w-full border border-black/10 rounded-md px-3 py-2.5 text-sm focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none"
+                />
+            </div>
+            <div>
+                <label className="text-xs uppercase tracking-wider text-slate-600 font-medium">Pre-filled message</label>
+                <textarea
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    data-testid="whatsapp-public-message"
+                    rows={2}
+                    placeholder="Hello, I need assistance regarding my Ghana Visa application."
+                    className="mt-1.5 w-full border border-black/10 rounded-md px-3 py-2.5 text-sm focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none"
+                />
+            </div>
+            <div>
+                <button onClick={() => onSave(number, message)} data-testid="whatsapp-public-save" className="bg-ghana-green text-white px-4 py-2.5 rounded-md text-sm font-medium inline-flex items-center gap-2 hover:bg-ghana-green-dark"><Save size={14} /> Save WhatsApp button</button>
+            </div>
+        </div>
+    );
+};
+
 const SelectRow = ({ initial, options, onSave, testid }) => {
     const [v, setV] = useState(initial);
     useEffect(() => setV(initial), [initial]);

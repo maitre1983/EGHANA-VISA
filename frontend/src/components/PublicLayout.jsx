@@ -4,6 +4,7 @@ import Header from "./Header";
 import Footer from "./Footer";
 import AbenaChat from "./AbenaChat";
 import CookieConsent from "./CookieConsent";
+import WhatsAppButton from "./WhatsAppButton";
 import useAnalyticsRouter from "../hooks/useAnalyticsRouter";
 
 export default function PublicLayout() {
@@ -16,6 +17,7 @@ export default function PublicLayout() {
             </main>
             <Footer />
             <AbenaChat />
+            <WhatsAppButton />
             <CookieConsent />
         </>
     );
