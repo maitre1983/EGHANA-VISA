@@ -173,6 +173,14 @@ async def _seed_or_migrate_settings() -> None:
         updates["whatsapp_public_number"] = DEFAULT_SETTINGS["whatsapp_public_number"]
     if "whatsapp_public_message" not in existing:
         updates["whatsapp_public_message"] = DEFAULT_SETTINGS["whatsapp_public_message"]
+    if "whatsapp_agent_name" not in existing:
+        updates["whatsapp_agent_name"] = DEFAULT_SETTINGS["whatsapp_agent_name"]
+    if "whatsapp_agent_avatar_url" not in existing:
+        updates["whatsapp_agent_avatar_url"] = DEFAULT_SETTINGS["whatsapp_agent_avatar_url"]
+    if "whatsapp_agent_status_text" not in existing:
+        updates["whatsapp_agent_status_text"] = DEFAULT_SETTINGS["whatsapp_agent_status_text"]
+    if "whatsapp_teaser_message" not in existing:
+        updates["whatsapp_teaser_message"] = DEFAULT_SETTINGS["whatsapp_teaser_message"]
     if "admin_backoffice_url" not in existing:
         updates["admin_backoffice_url"] = DEFAULT_SETTINGS["admin_backoffice_url"]
     for k in ("ga4_measurement_id", "gsc_verification", "clarity_project_id"):
@@ -302,6 +310,10 @@ async def public_config():
         "whatsapp_admin": s.get("whatsapp_admin", ""),
         "whatsapp_public_number": s.get("whatsapp_public_number", ""),
         "whatsapp_public_message": s.get("whatsapp_public_message", ""),
+        "whatsapp_agent_name": s.get("whatsapp_agent_name", ""),
+        "whatsapp_agent_avatar_url": s.get("whatsapp_agent_avatar_url", ""),
+        "whatsapp_agent_status_text": s.get("whatsapp_agent_status_text", ""),
+        "whatsapp_teaser_message": s.get("whatsapp_teaser_message", ""),
         "hubtel_sandbox": is_sandbox(h_cfg),
         "hubtel_ready": _hubtel_ready(h_cfg),
         "hubtel_missing_fields": [] if is_sandbox(h_cfg) else _hubtel_missing(h_cfg),
@@ -1000,6 +1012,10 @@ async def admin_update_additional_emails(payload: AdditionalAdminEmailsIn, ctx: 
 class WhatsAppPublicIn(BaseModel):
     whatsapp_public_number: str = ""
     whatsapp_public_message: str = ""
+    whatsapp_agent_name: str = ""
+    whatsapp_agent_avatar_url: str = ""
+    whatsapp_agent_status_text: str = ""
+    whatsapp_teaser_message: str = ""
 
 
 @api.post("/admin/settings/whatsapp-public")
@@ -1009,6 +1025,10 @@ async def admin_update_whatsapp_public(payload: WhatsAppPublicIn, ctx: dict = De
         {"$set": {
             "whatsapp_public_number": (payload.whatsapp_public_number or "").strip(),
             "whatsapp_public_message": (payload.whatsapp_public_message or "").strip(),
+            "whatsapp_agent_name": (payload.whatsapp_agent_name or "").strip(),
+            "whatsapp_agent_avatar_url": (payload.whatsapp_agent_avatar_url or "").strip(),
+            "whatsapp_agent_status_text": (payload.whatsapp_agent_status_text or "").strip(),
+            "whatsapp_teaser_message": (payload.whatsapp_teaser_message or "").strip(),
             "updated_at": now_iso(),
         }},
     )

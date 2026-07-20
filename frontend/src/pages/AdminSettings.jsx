@@ -55,8 +55,8 @@ export default function AdminSettings() {
         }
     };
     const saveWhatsapp = async (v) => { await api.post("/admin/settings/whatsapp", { whatsapp_admin: v }); toast.success("Saved"); reload(); };
-    const saveWhatsappPublic = async (number, message) => {
-        await api.post("/admin/settings/whatsapp-public", { whatsapp_public_number: number, whatsapp_public_message: message });
+    const saveWhatsappPublic = async (payload) => {
+        await api.post("/admin/settings/whatsapp-public", payload);
         toast.success("Saved"); reload();
     };
     const saveBackofficeUrl = async (v) => {
@@ -159,13 +159,19 @@ export default function AdminSettings() {
                             />
                             <div className="text-xs text-slate-500 mt-2">Base URL used to build the &quot;Open Back Office&quot; button in admin notification emails. The tracking number is appended automatically as a query param.</div>
                         </Card>
-                        <Card title="Public WhatsApp button (visible on every page)">
+                        <Card title="Public WhatsApp widget (visible on every page)">
                             <WhatsappPublicEditor
-                                initialNumber={s.whatsapp_public_number || ""}
-                                initialMessage={s.whatsapp_public_message || ""}
+                                initial={{
+                                    whatsapp_public_number: s.whatsapp_public_number || "",
+                                    whatsapp_public_message: s.whatsapp_public_message || "",
+                                    whatsapp_agent_name: s.whatsapp_agent_name || "",
+                                    whatsapp_agent_avatar_url: s.whatsapp_agent_avatar_url || "",
+                                    whatsapp_agent_status_text: s.whatsapp_agent_status_text || "",
+                                    whatsapp_teaser_message: s.whatsapp_teaser_message || "",
+                                }}
                                 onSave={saveWhatsappPublic}
                             />
-                            <div className="text-xs text-slate-500 mt-2">Digits only, international format. Message is pre-filled when a visitor taps the floating WhatsApp icon.</div>
+                            <div className="text-xs text-slate-500 mt-2">A conversational widget appears at the bottom-right of every public page. Tapping it opens a chat preview with the agent name, avatar, status, and a teaser message. The green CTA opens WhatsApp with the pre-filled message.</div>
                         </Card>
                     </>
                 )}
@@ -235,35 +241,45 @@ const AdditionalEmailsEditor = ({ initial, onSave }) => {
     );
 };
 
-const WhatsappPublicEditor = ({ initialNumber, initialMessage, onSave }) => {
-    const [number, setNumber] = useState(initialNumber);
-    const [message, setMessage] = useState(initialMessage);
-    useEffect(() => { setNumber(initialNumber); setMessage(initialMessage); }, [initialNumber, initialMessage]);
+const WhatsappPublicEditor = ({ initial, onSave }) => {
+    const [f, setF] = useState(initial);
+    useEffect(() => setF(initial), [initial]);
+    const set = (k, v) => setF((old) => ({ ...old, [k]: v }));
+    const FIELDS = [
+        ["whatsapp_public_number", "Number (international format)", "+233202794825", "input"],
+        ["whatsapp_public_message", "Pre-filled message sent to WhatsApp", "Hello, I need assistance regarding my Ghana Visa application.", "textarea"],
+        ["whatsapp_agent_name", "Agent display name", "Ama · Ghana Visa Support", "input"],
+        ["whatsapp_agent_avatar_url", "Agent avatar URL (optional — leave empty to use initials)", "https://…/avatar.jpg", "input"],
+        ["whatsapp_agent_status_text", "Status line (e.g. Online · Replies within 5 min)", "Online · Replies within 5 minutes", "input"],
+        ["whatsapp_teaser_message", "Teaser message shown inside the widget bubble", "Hi there! 👋 Have a question about your Ghana visa? Chat with us on WhatsApp — we're here to help.", "textarea"],
+    ];
     return (
         <div className="flex flex-col gap-3">
+            {FIELDS.map(([k, label, placeholder, kind]) => (
+                <div key={k}>
+                    <label className="text-xs uppercase tracking-wider text-slate-600 font-medium">{label}</label>
+                    {kind === "textarea" ? (
+                        <textarea
+                            value={f[k] || ""}
+                            onChange={(e) => set(k, e.target.value)}
+                            data-testid={k.replace(/_/g, "-")}
+                            rows={2}
+                            placeholder={placeholder}
+                            className="mt-1.5 w-full border border-black/10 rounded-md px-3 py-2.5 text-sm focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none"
+                        />
+                    ) : (
+                        <input
+                            value={f[k] || ""}
+                            onChange={(e) => set(k, e.target.value)}
+                            data-testid={k.replace(/_/g, "-")}
+                            placeholder={placeholder}
+                            className="mt-1.5 w-full border border-black/10 rounded-md px-3 py-2.5 text-sm focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none"
+                        />
+                    )}
+                </div>
+            ))}
             <div>
-                <label className="text-xs uppercase tracking-wider text-slate-600 font-medium">Number (international format)</label>
-                <input
-                    value={number}
-                    onChange={(e) => setNumber(e.target.value)}
-                    data-testid="whatsapp-public-number"
-                    placeholder="+233202794825"
-                    className="mt-1.5 w-full border border-black/10 rounded-md px-3 py-2.5 text-sm focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none"
-                />
-            </div>
-            <div>
-                <label className="text-xs uppercase tracking-wider text-slate-600 font-medium">Pre-filled message</label>
-                <textarea
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    data-testid="whatsapp-public-message"
-                    rows={2}
-                    placeholder="Hello, I need assistance regarding my Ghana Visa application."
-                    className="mt-1.5 w-full border border-black/10 rounded-md px-3 py-2.5 text-sm focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none"
-                />
-            </div>
-            <div>
-                <button onClick={() => onSave(number, message)} data-testid="whatsapp-public-save" className="bg-ghana-green text-white px-4 py-2.5 rounded-md text-sm font-medium inline-flex items-center gap-2 hover:bg-ghana-green-dark"><Save size={14} /> Save WhatsApp button</button>
+                <button onClick={() => onSave(f)} data-testid="whatsapp-public-save" className="bg-ghana-green text-white px-4 py-2.5 rounded-md text-sm font-medium inline-flex items-center gap-2 hover:bg-ghana-green-dark"><Save size={14} /> Save WhatsApp widget</button>
             </div>
         </div>
     );
