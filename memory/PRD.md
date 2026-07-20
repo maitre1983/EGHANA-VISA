@@ -232,6 +232,11 @@ Build a full-stack Ghana Visa On Arrival web application for **eghanavisa.com** 
 - Email templates bumped to version 5 to inject the new "Open Back Office" call-to-action.
 - Verified end-to-end: real submission `GH-2026-292849` triggered notification to both `mirtoken2022@gmail.com` and `trumpbricsbot@gmail.com` with tracking-scoped link. Widget open/close + CTA validated via Playwright screenshot.
 
+## Iteration 14 (2026-02-20) — Cloudflare 520 root-cause fix (HEAD ≠ GET)
+- **Root cause**: FastAPI's `@router.get()` decorator only registers GET, so any HEAD probe (Cloudflare edge, uptime monitors, prefetchers) received `HTTP 405` with `Content-Length: 31` **and** a JSON body `{"detail":"Method Not Allowed"}`. RFC 9110 §9.3.2 forbids a HEAD response from having a message body, so Cloudflare labelled the origin response "unparseable" and returned the 520 banner overlaid on `/admin`.
+- **Fix (RFC-compliant, additive)**: New `HEADAsGETMiddleware` (pure ASGI, ~25 lines). It intercepts any HEAD request, routes it internally as GET, and strips the response body before it is sent back to the client. Content-Length still reflects what GET would have returned so probes get accurate size info.
+- **Verified**: All 7 sampled routes now return `200/401/404/405` with **0 body bytes** on HEAD while GET/POST are untouched. Admin login → dashboard loads cleanly with zero console errors. No new endpoint introduced returns empty/malformed responses.
+
 ## Backlog (P0/P1/P2 remaining)
 - **P0**: Abena Tickets Admin UI + SMS Integration (Admin Dashboard view for escalated tickets, SMS notif for admins).
 - **P1**: Abena Learning System + AI Analytics Dashboard.

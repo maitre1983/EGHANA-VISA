@@ -66,6 +66,43 @@ api = APIRouter(prefix="/api")
 email_svc = EmailService(db)
 
 
+class HEADAsGETMiddleware:
+    """RFC 9110 §9.3.2 — HEAD MUST return the same headers as GET but no body.
+    FastAPI/Starlette only auto-registers GET on `@router.get()`, so a HEAD
+    request receives a 405 with a JSON body of 31 bytes + Content-Length: 31,
+    which Cloudflare rejects as an unparseable origin response (520). This
+    middleware transparently handles HEAD by routing it as GET internally and
+    stripping the response body before it reaches the client. Content-Length
+    stays intact so probes get an accurate size."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http" or scope.get("method") != "HEAD":
+            await self.app(scope, receive, send)
+            return
+        # Route HEAD as GET internally.
+        get_scope = dict(scope)
+        get_scope["method"] = "GET"
+
+        async def strip_body_send(message):
+            if message["type"] == "http.response.body":
+                # Drop the body but signal end-of-stream.
+                await send({
+                    "type": "http.response.body",
+                    "body": b"",
+                    "more_body": False,
+                })
+            else:
+                await send(message)
+
+        await self.app(get_scope, receive, strip_body_send)
+
+
+app.add_middleware(HEADAsGETMiddleware)
+
+
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
 
