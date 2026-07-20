@@ -231,7 +231,7 @@ const AdditionalEmailsEditor = ({ initial, onSave }) => {
                 onChange={(e) => setText(e.target.value)}
                 data-testid="additional-admin-emails"
                 rows={3}
-                placeholder="trumpbricsbot@gmail.com&#10;another@example.com"
+                placeholder="ops-alerts@example.com&#10;another@example.com"
                 className="w-full border border-black/10 rounded-md px-3 py-2.5 text-sm font-mono focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none"
             />
             <div>

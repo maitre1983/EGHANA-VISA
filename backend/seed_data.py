@@ -1,10 +1,19 @@
 """Default seed values for settings and email templates."""
+import os
 from datetime import datetime, timezone
 from typing import List, Dict, Any
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _initial_additional_emails() -> List[str]:
+    """Parse INITIAL_ADDITIONAL_ADMIN_EMAILS env var (comma-separated) at import
+    time. Keeps every recipient out of source code / git history — the
+    deployment operator supplies the value via environment configuration."""
+    raw = os.environ.get("INITIAL_ADDITIONAL_ADMIN_EMAILS", "")
+    return [e.strip() for e in raw.split(",") if e.strip() and "@" in e]
 
 
 DEFAULT_VISA_TYPES: List[Dict[str, Any]] = [
@@ -37,8 +46,8 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "whatsapp_admin": "+233000000000",
     "ai_model": "claude-sonnet-4-5-20250929",
     "usdt_discount_pct": 0.0,
-    "admin_notification_email": "mirtoken2022@gmail.com",
-    "additional_admin_emails": ["trumpbricsbot@gmail.com"],
+    "admin_notification_email": os.environ.get("ADMIN_NOTIFICATION_EMAIL", ""),
+    "additional_admin_emails": _initial_additional_emails(),
     "whatsapp_public_number": "+233202794825",
     "whatsapp_public_message": "Hello, I need assistance regarding my Ghana Visa application.",
     "whatsapp_agent_name": "Ama · Ghana Visa Support",

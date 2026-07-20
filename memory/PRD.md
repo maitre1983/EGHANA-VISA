@@ -38,7 +38,7 @@ Build a full-stack Ghana Visa On Arrival web application for **eghanavisa.com** 
 
 ## Iteration 12 (2026-02-08) — Admin notifications + Abena rebrand
 - ✅ Internal ops email fired to `admin_notification_email` on: (a) new submission — template `admin_new_submission`; (b) payment success (Hubtel + USDT crypto) — template `admin_payment_success`.
-- ✅ New admin setting `admin_notification_email` (default `mirtoken2022@gmail.com`), editable in `/admin/settings → WhatsApp & AI` tab (leave empty to disable).
+- ✅ New admin setting `admin_notification_email` (defaults from `ADMIN_NOTIFICATION_EMAIL` env var, empty otherwise), editable in `/admin/settings → WhatsApp & AI` tab (leave empty to disable).
 - ✅ New endpoint `POST /api/admin/settings/admin-notification-email`.
 - ✅ AI assistant renamed globally from **Ama** → **Abena** (frontend component `AbenaChat.jsx`, backend system prompt, all UI copy, admin settings labels).
 - ✅ Email templates re-seeded (`EMAIL_TEMPLATES_VERSION = 3`) — adds the two new admin templates without touching existing user-facing ones.
@@ -220,7 +220,7 @@ Build a full-stack Ghana Visa On Arrival web application for **eghanavisa.com** 
 
 
 ## Iteration 13 (2026-02-20) — WhatsApp button + fan-out admin notifications
-- ✅ **Additional admin recipients**: New `additional_admin_emails` list in settings, seeded with `trumpbricsbot@gmail.com`. `_notify_admin()` now fans out every admin notification (new_submission + payment_success) to the primary email AND every entry in this list.
+- ✅ **Additional admin recipients**: New `additional_admin_emails` list in settings, seeded from the `INITIAL_ADDITIONAL_ADMIN_EMAILS` environment variable (comma-separated). `_notify_admin()` now fans out every admin notification (new_submission + payment_success) to the primary email AND every entry in this list.
 - ✅ **Back-office link in admin emails**: New `admin_backoffice_url` setting (default `https://eghanavisa.com/admin/dashboard`). Every admin email now contains an "Open Back Office →" button with `?tracking={tracking_no}` appended so admins jump straight to the application.
 - ✅ **Conversational WhatsApp widget** (`WhatsAppButton.jsx`, upgraded 2026-02-20): Fixed bottom-right. Closed state = green pulsing button + "1" unread badge. Open state = mini WhatsApp-styled chat panel with agent avatar (URL or initials fallback), name, "Online · Replies within X min" status with green dot, teaser message bubble, and green CTA "Start chat on WhatsApp" that opens `wa.me/…?text=…`.
 - ✅ **Zero hardcoding** — 6 configurable fields (`whatsapp_public_number`, `whatsapp_public_message`, `whatsapp_agent_name`, `whatsapp_agent_avatar_url`, `whatsapp_agent_status_text`, `whatsapp_teaser_message`) all editable in `Admin → Settings → WhatsApp & AI` tab.
@@ -230,7 +230,7 @@ Build a full-stack Ghana Visa On Arrival web application for **eghanavisa.com** 
     - `POST /api/admin/settings/admin-backoffice-url` `{ admin_backoffice_url }`
 - Public `/api/config` exposes all 6 WhatsApp widget fields.
 - Email templates bumped to version 5 to inject the new "Open Back Office" call-to-action.
-- Verified end-to-end: real submission `GH-2026-292849` triggered notification to both `mirtoken2022@gmail.com` and `trumpbricsbot@gmail.com` with tracking-scoped link. Widget open/close + CTA validated via Playwright screenshot.
+- Verified end-to-end: real submission `GH-2026-292849` triggered notification to both the primary admin and an additional recipient (configured via env var) with tracking-scoped link. Widget open/close + CTA validated via Playwright screenshot.
 
 ## Iteration 14 (2026-02-20) — Cloudflare 520 root-cause fix (HEAD ≠ GET)
 - **Root cause**: FastAPI's `@router.get()` decorator only registers GET, so any HEAD probe (Cloudflare edge, uptime monitors, prefetchers) received `HTTP 405` with `Content-Length: 31` **and** a JSON body `{"detail":"Method Not Allowed"}`. RFC 9110 §9.3.2 forbids a HEAD response from having a message body, so Cloudflare labelled the origin response "unparseable" and returned the 520 banner overlaid on `/admin`.
