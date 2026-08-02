@@ -13,7 +13,7 @@ import os
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://ghana-voa-platform.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://ghana-visa-app.preview.emergentagent.com").rstrip("/")
 ADMIN_EMAIL = "admin@eghanavisa.com"
 ADMIN_PASSWORD = "Admin@2026"
 OLD_ROTATED_PASSWORD = "Admin@2026New!"
