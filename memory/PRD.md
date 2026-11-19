@@ -283,3 +283,8 @@ Build a full-stack Ghana Visa On Arrival web application for **eghanavisa.com** 
 - Mobile: Abena/WhatsApp buttons no longer overlap; admin mobile top nav.
 - Backup: /root/backups/predeploy_20261119_194959 (mongodump preview DB + git commit a5a41f7). Rollback = Emergent "Rollback" to that checkpoint + redeploy.
 - Tests: iteration_15, iteration_16 + pytest suites pass. Deploy readiness: PASS. Deployment must be triggered from the UI deploy panel (replace existing app).
+
+## Iteration 18 (2026-11-19) — Compliance fix requested by Emergent support (deploy block)
+- VisaSample.jsx: header "eGhanaVisa · Fictitious example" + "Not a real visa" badge, SAMPLE / ILLUSTRATION watermark, disclaimer footer; removed "Republic of Ghana", "Comptroller-General of Immigration", "Employment Prohibited", flag-coloured QR mock.
+- Footer.jsx contact note: replaced "Comptroller-General of Immigration / Republic of Ghana" with "eGhanaVisa — independent private visa assistance service".
+- Tested iteration_17 (100% frontend). Deployment on hold until Emergent lifts the classifier block.

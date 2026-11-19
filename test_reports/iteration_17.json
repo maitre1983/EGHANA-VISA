@@ -1,0 +1,24 @@
+{
+  "summary": "Frontend-only test of the VisaSample compliance rework plus a regression run. VisaSample on /apply was checked at desktop 1920x800 and mobile 390x844 (after the cookie banner was dismissed). Header shows 'eGhanaVisa · Fictitious example' and a gold 'Not a real visa' badge. The rotated red watermark 'Sample / Illustration' is clearly visible. The disclaimer reads 'Illustration only — not an authentic visa and not issued by the Ghanaian authorities'. There are no img/svg elements inside the card (no seals, crests or signatures). A DOM check found no overflow or clipping, no element outside the card bounds, and no horizontal page scroll (docW = viewport). The rendered innerText of /, /apply, /prices, /faq, /track, /terms, /privacy, /disclaimer and /visa-by-nationality contains no 'Comptroller' and no 'Employment Prohibited'. 'Republic of Ghana' appears only in the allowed Terms legal sentence. A source grep confirms the same. 'Ghana Immigration Service' appears only in the footer 'not affiliated with' disclaimer, which is fine. footer-contact-note reads 'eGhanaVisa — independent private visa assistance service'. Regression: typed name, passport, arrival and departure appear live in the sample with blur(4px). Live summary: regular $350, express +$50 = $400, priority +$25 = $375, and the submit button label matches. Full submit with 4 document uploads leads to /payment/GH-2026-780629. Hubtel sandbox success leads to /success, and admin shows payment_status=paid, amount 350. The test app was deleted with DELETE /api/admin/applications/GH-2026-780629 (200, 4 R2 objects removed), and a search for TEST_Iter17 returns [].",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/apply VisaSample", "issues": ["Header text is 10px and the disclaimer is 8-9px uppercase. Both are readable but small. Optional: use 11px for the disclaimer on desktop so it is easier to read.", "On mobile, the cookie consent sheet covers the sample on the first visit. This is expected behaviour and not a bug."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "VisaSample.jsx is clean: no government wording, no images or SVGs, aria-label marks it as an illustration, pointer-events-none on the watermark. Apply.jsx forms, prices and payment logic are unchanged.",
+    "Optional: the site logo still uses the Ghana flag colours and the name 'e.GHANA VISA'. This is outside this ticket, but worth keeping in mind if support flags branding again."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped)", "frontend": "100%"},
+  "test_credentials": "admin@eghanavisa.com / Admin@2026",
+  "seed_data_creation": "One TEST_Iter17 Sample User application (GH-2026-780629), paid in sandbox and then deleted by tracking number. No settings changed, SMS untouched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Dismiss the cookie banner with [data-testid=consent-reject] before taking screenshots. Apply flow: fill the apply-* fields, set_input_files on apply-file-{face_photo,passport_copy,passport_cover,flight_ticket}, tick both checkboxes, apply-submit, then payment-hubtel-btn, then sandbox-success, then /success/{trk}. Admin search: GET /api/admin/applications?search=... returns a list."
+}
