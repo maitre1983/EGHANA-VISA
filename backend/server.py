@@ -1061,7 +1061,7 @@ async def admin_application_detail(tracking_no: str, ctx: dict = Depends(require
 
 
 # ----------------- Payments / Transactions (read-only, unified) -----------------
-from transactions_service import list_transactions, compute_summary, to_csv
+from transactions_service import list_transactions, compute_summary, to_csv, to_xlsx
 
 
 @api.get("/admin/transactions")
@@ -1139,6 +1139,32 @@ async def admin_transactions_csv(
     return Response(
         content=csv_text,
         media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@api.get("/admin/transactions.xlsx")
+async def admin_transactions_xlsx(
+    provider: str = Query(""),
+    status: str = Query(""),
+    search: str = Query(""),
+    from_date: str = Query(""),
+    to_date: str = Query(""),
+    ctx: dict = Depends(require_admin),
+):
+    """Professional Excel (.xlsx) export honoring the same filters as the
+    list endpoint. Includes a Summary sheet with revenue by (provider,
+    currency) computed via Excel formulas that exclude audit-only rows."""
+    txs = await list_transactions(
+        db,
+        provider=provider, status=status, search=search,
+        from_date=from_date, to_date=to_date,
+    )
+    blob = to_xlsx(txs)
+    filename = f"transactions-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.xlsx"
+    return Response(
+        content=blob,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 

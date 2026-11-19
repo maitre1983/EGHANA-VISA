@@ -248,8 +248,23 @@ def compute_summary(txs: Iterable[dict]) -> dict:
     }
 
 
+def _safe_cell(v: Any) -> Any:
+    """CSV-injection / spreadsheet-formula protection.
+
+    If the value is a string that starts with one of `= + - @ \t \r`,
+    Excel / LibreOffice / Google Sheets will interpret it as a formula.
+    Malicious user-supplied data could therefore exfiltrate information
+    or trigger DDE. Prefix with a single quote to force text interpretation.
+    Numeric / boolean / None values pass through unchanged so totals keep
+    working in the generated spreadsheet."""
+    if isinstance(v, str) and v and v[0] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + v
+    return v
+
+
 def to_csv(txs: list[dict]) -> str:
-    """CSV export. One column per normalized field, header-stable."""
+    """CSV export. One column per normalized field, header-stable.
+    Values are sanitised against CSV injection."""
     import csv, io
     buf = io.StringIO()
     fields = [
@@ -260,5 +275,145 @@ def to_csv(txs: list[dict]) -> str:
     w = csv.DictWriter(buf, fieldnames=fields, extrasaction="ignore")
     w.writeheader()
     for t in txs:
-        w.writerow({k: t.get(k, "") for k in fields})
+        w.writerow({k: _safe_cell(t.get(k, "")) for k in fields})
+    return buf.getvalue()
+
+
+def to_xlsx(txs: list[dict]) -> bytes:
+    """Professional Excel (.xlsx) export.
+
+    Produces a workbook with:
+      • Sheet 1 "Transactions" — every normalized row with:
+          - Styled header, frozen top row, autoFilter, auto column widths
+          - Status-colour-coded status cells
+          - `audit_only` flag preserved so auditors can see deduplicated callbacks
+          - CSV-injection protection on every string cell
+      • Sheet 2 "Summary" — confirmed revenue grouped by (provider, currency),
+        with Excel SUMIFS formulas that excludes audit_only rows.
+    Returns the raw .xlsx bytes."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+    import io
+
+    wb = Workbook()
+
+    # ---------- Sheet 1: Transactions ----------
+    ws = wb.active
+    ws.title = "Transactions"
+    headers = [
+        ("Date", "date"),
+        ("Client", "customer_name"),
+        ("Email", "customer_email"),
+        ("Tracking #", "tracking_no"),
+        ("Amount", "amount"),
+        ("Currency", "currency"),
+        ("Provider", "provider"),
+        ("Network", "network"),
+        ("Reference", "provider_reference"),
+        ("Status", "status"),
+        ("Audit only", "audit_only"),
+        ("Payment method", "payment_method_label"),
+        ("Source", "source"),
+    ]
+    thin = Side(style="thin", color="E2E8F0")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    header_fill = PatternFill("solid", fgColor="0E7D3B")  # Ghana green
+    header_align = Alignment(horizontal="left", vertical="center", wrap_text=False)
+
+    for col_idx, (label, _) in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_idx, value=label)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_align
+        cell.border = border
+
+    status_fills = {
+        "paid":          PatternFill("solid", fgColor="0E7D3B"),
+        "pending":       PatternFill("solid", fgColor="F4C542"),
+        "failed":        PatternFill("solid", fgColor="CE1126"),
+        "expired":       PatternFill("solid", fgColor="94A3B8"),
+        "refunded":      PatternFill("solid", fgColor="6366F1"),
+        "unmatched":     PatternFill("solid", fgColor="F97316"),
+        "deduplicated":  PatternFill("solid", fgColor="CBD5E1"),
+    }
+    status_font_white = Font(color="FFFFFF", bold=True, size=10)
+    status_font_dark = Font(color="0F172A", bold=True, size=10)
+
+    for row_idx, t in enumerate(txs, start=2):
+        for col_idx, (_, key) in enumerate(headers, 1):
+            raw = t.get(key)
+            if key == "amount":
+                val = float(raw or 0)
+            elif key == "audit_only":
+                val = bool(raw)
+            else:
+                val = _safe_cell(raw if raw is not None else "")
+            cell = ws.cell(row=row_idx, column=col_idx, value=val)
+            cell.border = border
+            if key == "amount":
+                cell.number_format = "#,##0.00"
+                cell.alignment = Alignment(horizontal="right")
+            if key == "status":
+                fill = status_fills.get(str(raw))
+                if fill:
+                    cell.fill = fill
+                    cell.font = status_font_white if raw in ("paid","failed","refunded","unmatched") else status_font_dark
+                    cell.alignment = Alignment(horizontal="center")
+
+    # Column widths tailored to content
+    widths = {
+        "A": 24, "B": 22, "C": 28, "D": 20, "E": 12, "F": 10,
+        "G": 14, "H": 10, "I": 28, "J": 14, "K": 11, "L": 28, "M": 18,
+    }
+    for col, w in widths.items():
+        ws.column_dimensions[col].width = w
+
+    # Freeze header + enable autoFilter so admins can sort/filter in Excel
+    ws.freeze_panes = "A2"
+    last_col_letter = get_column_letter(len(headers))
+    last_row = max(2, len(txs) + 1)
+    ws.auto_filter.ref = f"A1:{last_col_letter}{last_row}"
+
+    # ---------- Sheet 2: Summary ----------
+    s = wb.create_sheet("Summary")
+    s["A1"] = "Confirmed revenue by provider × currency"
+    s["A1"].font = Font(bold=True, size=13)
+    s["A1"].alignment = Alignment(vertical="center")
+    s.row_dimensions[1].height = 22
+
+    s["A3"] = "Provider"; s["B3"] = "Currency"; s["C3"] = "Confirmed amount"; s["D3"] = "Transactions"
+    for c in ("A3", "B3", "C3", "D3"):
+        s[c].font = header_font
+        s[c].fill = header_fill
+        s[c].alignment = header_align
+
+    summary = compute_summary(txs)
+    row = 4
+    for item in summary["confirmed_revenue"]:
+        s.cell(row=row, column=1, value=item["provider"])
+        s.cell(row=row, column=2, value=item["currency"])
+        c_amt = s.cell(row=row, column=3, value=item["amount"])
+        c_amt.number_format = "#,##0.00"
+        # Count paid tx for this (provider, currency) — formula over Sheet 1
+        s.cell(row=row, column=4,
+               value=f'=COUNTIFS(Transactions.G:G,"{item["provider"]}",Transactions.F:F,"{item["currency"]}",Transactions.J:J,"paid",Transactions.K:K,FALSE)')
+        row += 1
+
+    # Status counts block
+    s.cell(row=row + 1, column=1, value="Status counts").font = Font(bold=True)
+    row += 2
+    for k, v in summary["status_counts"].items():
+        s.cell(row=row, column=1, value=k)
+        s.cell(row=row, column=2, value=v)
+        row += 1
+
+    s.column_dimensions["A"].width = 18
+    s.column_dimensions["B"].width = 12
+    s.column_dimensions["C"].width = 18
+    s.column_dimensions["D"].width = 14
+
+    buf = io.BytesIO()
+    wb.save(buf)
     return buf.getvalue()

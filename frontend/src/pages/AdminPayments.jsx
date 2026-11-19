@@ -93,10 +93,11 @@ export default function AdminPayments() {
         }
     };
 
-    const exportCsv = async () => {
+    const exportFile = async (format) => {
         try {
             const token = localStorage.getItem("egv_admin_token");
-            const url = new URL(`${api.defaults.baseURL}/admin/transactions.csv`);
+            const ext = format === "xlsx" ? "xlsx" : "csv";
+            const url = new URL(`${api.defaults.baseURL}/admin/transactions.${ext}`);
             const qs = { provider, status, search: search.trim(), from_date: fromDate, to_date: toDate };
             Object.entries(qs).forEach(([k, v]) => { if (v) url.searchParams.set(k, v); });
             const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
@@ -104,13 +105,15 @@ export default function AdminPayments() {
             const blob = await res.blob();
             const a = document.createElement("a");
             a.href = URL.createObjectURL(blob);
-            a.download = `eghanavisa-transactions-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.csv`;
+            a.download = `eghanavisa-transactions-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.${ext}`;
             document.body.appendChild(a); a.click(); a.remove();
-            toast.success("CSV exported");
+            toast.success(`${ext.toUpperCase()} exported`);
         } catch (e) {
             toast.error(`Export failed: ${e.message}`);
         }
     };
+    const exportCsv = () => exportFile("csv");
+    const exportXlsx = () => exportFile("xlsx");
 
     const sorted = useMemo(() => {
         // Hide deduplicated callbacks from the main view unless the admin
@@ -149,7 +152,8 @@ export default function AdminPayments() {
                 </div>
                 <div className="flex gap-2">
                     <button onClick={load} data-testid="payments-refresh" className="inline-flex items-center gap-2 border border-black/10 bg-white px-4 py-2 rounded-md text-sm hover:bg-slate-50"><RefreshCw size={14} /> Refresh</button>
-                    <button onClick={exportCsv} data-testid="payments-export-csv" className="inline-flex items-center gap-2 bg-ghana-black text-white px-4 py-2 rounded-md text-sm hover:bg-slate-900"><Download size={14} /> Export CSV</button>
+                    <button onClick={exportCsv} data-testid="payments-export-csv" className="inline-flex items-center gap-2 border border-black/10 bg-white px-4 py-2 rounded-md text-sm hover:bg-slate-50"><Download size={14} /> Export CSV</button>
+                    <button onClick={exportXlsx} data-testid="payments-export-xlsx" className="inline-flex items-center gap-2 bg-ghana-green text-white px-4 py-2 rounded-md text-sm hover:bg-ghana-green-dark font-semibold"><Download size={14} /> Export Excel</button>
                 </div>
             </div>
 

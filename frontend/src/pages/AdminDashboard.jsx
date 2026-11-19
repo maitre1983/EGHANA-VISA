@@ -40,6 +40,8 @@ export default function AdminDashboard() {
     const [fromDate, setFromDate] = useState("");
     const [toDate, setToDate] = useState("");
     const [sortAsc, setSortAsc] = useState(false); // false = newest first (DB default)
+    const [page, setPage] = useState(1);
+    const PAGE_SIZE = 100;
 
     const load = async () => {
         setLoading(true);
@@ -52,6 +54,8 @@ export default function AdminDashboard() {
                         search: search.trim() || undefined,
                         from_date: fromDate || undefined,
                         to_date: toDate || undefined,
+                        page,
+                        page_size: PAGE_SIZE,
                     },
                 }),
             ]);
@@ -59,10 +63,11 @@ export default function AdminDashboard() {
         } finally { setLoading(false); }
     };
 
-    useEffect(() => { load(); /* eslint-disable-next-line */ }, [filter]);
+    useEffect(() => { load(); /* eslint-disable-next-line */ }, [filter, page]);
 
     // Debounced search/date — local only, no new network until typing stops.
     useEffect(() => {
+        setPage(1);  // any new filter resets pagination
         const t = setTimeout(() => { load(); }, 350);
         return () => clearTimeout(t);
         // eslint-disable-next-line
@@ -163,7 +168,24 @@ export default function AdminDashboard() {
                     <button onClick={resetFilters} data-testid="dashboard-reset-filters" className="text-xs text-slate-500 hover:text-ghana-red underline underline-offset-2">Reset</button>
                 )}
                 <div className="text-xs text-slate-500 md:ml-auto whitespace-nowrap" data-testid="dashboard-result-count">
-                    {loading ? "Loading…" : `${displayed.length} result${displayed.length === 1 ? "" : "s"}`}
+                    {loading ? "Loading…" : `${displayed.length} result${displayed.length === 1 ? "" : "s"}${displayed.length >= PAGE_SIZE ? " (page " + page + ")" : ""}`}
+                </div>
+                <div className="flex items-center gap-1 text-xs">
+                    <button
+                        onClick={() => setPage((p) => Math.max(1, p - 1))}
+                        disabled={page <= 1 || loading}
+                        data-testid="dashboard-page-prev"
+                        className="px-2 py-1 border border-black/10 rounded hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                        aria-label="Previous page"
+                    >←</button>
+                    <span className="font-mono text-slate-500">pg {page}</span>
+                    <button
+                        onClick={() => setPage((p) => p + 1)}
+                        disabled={loading || displayed.length < PAGE_SIZE}
+                        data-testid="dashboard-page-next"
+                        className="px-2 py-1 border border-black/10 rounded hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                        aria-label="Next page"
+                    >→</button>
                 </div>
             </div>
 
