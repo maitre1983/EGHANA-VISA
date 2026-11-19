@@ -1,4 +1,4 @@
-import React from "react";
+import React, { Suspense, lazy } from "react";
 import "./App.css";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Toaster } from "sonner";
@@ -15,24 +15,34 @@ import Prices from "./pages/Prices";
 import FAQ from "./pages/FAQ";
 import Terms from "./pages/Terms";
 import Privacy from "./pages/Privacy";
-import SeoLanding from "./pages/SeoLanding";
-import NationalityLanding from "./pages/NationalityLanding";
-import NationalityIndex from "./pages/NationalityIndex";
+// Marketing + SEO pages are split out so the public homepage ships a
+// smaller JS bundle to first-time visitors.
+const SeoLanding = lazy(() => import("./pages/SeoLanding"));
+const NationalityLanding = lazy(() => import("./pages/NationalityLanding"));
+const NationalityIndex = lazy(() => import("./pages/NationalityIndex"));
 import { NATIONALITY_LIST } from "./data/nationalityData";
 
 import AdminLogin from "./pages/AdminLogin";
 import AdminChangePassword from "./pages/AdminChangePassword";
 import AdminLayout from "./pages/AdminLayout";
-import AdminDashboard from "./pages/AdminDashboard";
-import AdminSettings from "./pages/AdminSettings";
-import AdminTemplates from "./pages/AdminTemplates";
-import AdminAnalytics from "./pages/AdminAnalytics";
+// Admin pages are heavy (Settings alone is ~870 lines) and only reached
+// after sign-in. Lazy-loading them keeps them out of the public bundle.
+const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
+const AdminPayments = lazy(() => import("./pages/AdminPayments"));
+const AdminSettings = lazy(() => import("./pages/AdminSettings"));
+const AdminTemplates = lazy(() => import("./pages/AdminTemplates"));
+const AdminAnalytics = lazy(() => import("./pages/AdminAnalytics"));
+
+const RouteFallback = () => (
+    <div className="min-h-[50vh] flex items-center justify-center text-slate-400 text-sm" data-testid="route-loading">Loading…</div>
+);
 
 function App() {
     return (
         <div className="App">
             <BrowserRouter>
                 <Toaster position="top-right" richColors />
+                <Suspense fallback={<RouteFallback />}>
                 <Routes>
                     <Route element={<PublicLayout />}>
                         <Route path="/" element={<Home />} />
@@ -68,11 +78,13 @@ function App() {
                     <Route path="/admin/change-password" element={<AdminChangePassword />} />
                     <Route element={<AdminLayout />}>
                         <Route path="/admin/dashboard" element={<AdminDashboard />} />
+                        <Route path="/admin/payments" element={<AdminPayments />} />
                         <Route path="/admin/settings" element={<AdminSettings />} />
                         <Route path="/admin/templates" element={<AdminTemplates />} />
                         <Route path="/admin/analytics" element={<AdminAnalytics />} />
                     </Route>
                 </Routes>
+                </Suspense>
             </BrowserRouter>
         </div>
     );

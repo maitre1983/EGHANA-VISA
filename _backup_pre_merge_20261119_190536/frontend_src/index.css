@@ -1,0 +1,92 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+    margin: 0;
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background: #F8FAFC;
+    color: #0A0A0A;
+}
+
+@layer base {
+    :root {
+        --background: 0 0% 100%;
+        --foreground: 0 0% 4%;
+        --card: 0 0% 100%;
+        --card-foreground: 0 0% 4%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 0 0% 4%;
+        --primary: 147 100% 21%;
+        --primary-foreground: 0 0% 100%;
+        --secondary: 210 40% 96%;
+        --secondary-foreground: 0 0% 9%;
+        --muted: 210 40% 96%;
+        --muted-foreground: 215 16% 47%;
+        --accent: 51 96% 53%;
+        --accent-foreground: 0 0% 9%;
+        --destructive: 353 82% 43%;
+        --destructive-foreground: 0 0% 100%;
+        --border: 214 32% 91%;
+        --input: 214 32% 91%;
+        --ring: 147 100% 21%;
+        --radius: 0.625rem;
+    }
+}
+
+@layer base {
+    * { @apply border-border; }
+    body { @apply bg-background text-foreground; }
+    h1, h2, h3, h4, h5 { font-family: 'Outfit', sans-serif; }
+}
+
+/* Ghana flag stripe accent */
+.ghana-stripe {
+    background: linear-gradient(180deg,
+        #CE1126 0%, #CE1126 33.33%,
+        #FCD116 33.33%, #FCD116 66.66%,
+        #006B3F 66.66%, #006B3F 100%);
+}
+
+.ghana-stripe-h {
+    background: linear-gradient(90deg,
+        #CE1126 0%, #CE1126 33.33%,
+        #FCD116 33.33%, #FCD116 66.66%,
+        #006B3F 66.66%, #006B3F 100%);
+}
+
+/* Visa sample blur effect */
+.visa-blur { filter: blur(4px); user-select: none; }
+
+/* Grain texture overlay */
+.grain-overlay::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence baseFrequency='0.9' numOctaves='2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.6'/></svg>");
+    opacity: 0.06;
+    pointer-events: none;
+    mix-blend-mode: multiply;
+}
+
+/* Black star (Ghana) shape */
+.black-star {
+    width: 24px; height: 24px;
+    background-color: #0A0A0A;
+    clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+}
+
+@layer base {
+    [data-debug-wrapper="true"] { display: contents !important; }
+    [data-debug-wrapper="true"] > * {
+        margin-left: inherit; margin-right: inherit; margin-top: inherit; margin-bottom: inherit;
+        padding-left: inherit; padding-right: inherit; padding-top: inherit; padding-bottom: inherit;
+        column-gap: inherit; row-gap: inherit; gap: inherit;
+        border-left-width: inherit; border-right-width: inherit;
+        border-top-width: inherit; border-bottom-width: inherit;
+    }
+}

@@ -8,6 +8,7 @@ import logging
 import uuid
 import json
 import random
+import re
 from pathlib import Path
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, List
@@ -107,9 +108,12 @@ def now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
-async def _notify_admin(template_name: str, context: dict) -> None:
-    """Fire-and-forget internal ops email. Never breaks the caller if email fails.
-    Fans out to the primary admin_notification_email + any additional_admin_emails."""
+async def _notify_admin(template_name: str, context: dict) -> tuple[int, int]:
+    """Fire-and-forget internal ops email. Never raises on the caller path.
+    Fans out to the primary admin_notification_email + any additional_admin_emails.
+    Returns (sent_count, failed_count) so wrappers can decide whether to log
+    the dispatch as delivered or as needing retry."""
+    sent, failed = 0, 0
     try:
         s = await get_settings()
         recipients: list[str] = []
@@ -121,7 +125,7 @@ async def _notify_admin(template_name: str, context: dict) -> None:
             if e and e not in recipients:
                 recipients.append(e)
         if not recipients:
-            return
+            return (0, 0)
         # Inject a back-office link so admins can jump straight to the record.
         tracking = context.get("tracking", "")
         base_url = (s.get("admin_backoffice_url") or "").strip().rstrip("/")
@@ -139,10 +143,101 @@ async def _notify_admin(template_name: str, context: dict) -> None:
                     lang="en",
                     context=ctx,
                 )
+                sent += 1
             except Exception as inner:
+                failed += 1
                 logger.warning(f"Admin notification failed for {rcpt} ({template_name}): {inner}")
     except Exception as e:
         logger.warning(f"Admin notification failed ({template_name}): {e}")
+    return (sent, failed)
+
+
+async def _notify_payment_event(event: str, *, tracking: str | None, reference: str | None, context: dict) -> bool:
+    """Idempotent payment-lifecycle alert for admins.
+
+    event ∈ {"failed", "expired", "refunded"}. Dedupe key is
+    (event, tracking or reference).
+
+    Status model in `payment_notifications_log`:
+      • status="sent"      → notification confirmed delivered to Resend. Replay is a no-op.
+      • status="failed"    → send attempt raised. Replay is ALLOWED so admins can retry.
+      • status="pending"   → transient in-flight state (should never be observed for long).
+
+    Returns True when the event was actually dispatched this call.
+    """
+    template_map = {
+        "failed":   "admin_payment_failed",
+        "expired":  "admin_payment_expired",
+        "refunded": "admin_payment_refunded",
+    }
+    tpl = template_map.get(event)
+    if not tpl:
+        return False
+    key = f"{event}:{reference or tracking or 'unknown'}"
+    # Lookup existing log entry — only block when it is already "sent".
+    existing = None
+    try:
+        existing = await db.payment_notifications_log.find_one({"key": key}, {"_id": 0})
+    except Exception as e:
+        logger.warning(f"payment_notifications_log read failed for {key}: {e}")
+    if existing and existing.get("status") == "sent":
+        logger.info(f"payment_event[{event}] already sent for {key} - skipping")
+        return False
+    # Record / update as pending, then try to send.
+    try:
+        await db.payment_notifications_log.update_one(
+            {"key": key},
+            {"$set": {
+                "key": key,
+                "event": event,
+                "tracking": tracking,
+                "reference": reference,
+                "status": "pending",
+                "updated_at": now_iso(),
+            }, "$setOnInsert": {"created_at": now_iso()},
+             "$inc": {"attempts": 1}},
+            upsert=True,
+        )
+    except Exception as e:
+        logger.warning(f"payment_notifications_log write failed for {key}: {e}")
+    try:
+        sent, failed = await _notify_admin(tpl, context)
+        if sent > 0:
+            await db.payment_notifications_log.update_one(
+                {"key": key},
+                {"$set": {
+                    "status": "sent",
+                    "sent_at": now_iso(),
+                    "sent_count": sent,
+                    "failed_count": failed,
+                    "last_error": None,
+                }},
+            )
+            return True
+        # Nothing got through — mark failed so a future webhook retry can try again.
+        await db.payment_notifications_log.update_one(
+            {"key": key},
+            {"$set": {
+                "status": "failed",
+                "last_error": f"all {failed} recipients failed",
+                "failed_at": now_iso(),
+                "sent_count": sent,
+                "failed_count": failed,
+            }},
+        )
+        return False
+    except Exception as e:
+        err_text = str(e)[:500]
+        logger.warning(f"payment_event[{event}] send failed for {key}: {err_text}")
+        try:
+            await db.payment_notifications_log.update_one(
+                {"key": key},
+                {"$set": {"status": "failed", "last_error": err_text, "failed_at": now_iso()}},
+            )
+        except Exception:
+            pass
+        return False
+
 
 
 # ────────────────────────── STARTUP ──────────────────────────
@@ -307,6 +402,48 @@ async def startup() -> None:
     await _seed_default_admin()
     await _seed_or_migrate_settings()
     await _seed_email_templates_if_needed()
+    await _ensure_indexes()
+
+
+async def _ensure_indexes() -> None:
+    """Create query-optimising indexes on hot collections.
+
+    create_index is idempotent — reruns cost nothing when the index already
+    exists. Indexes chosen from the actual query patterns in this file:
+      • applications: lookups by tracking_no (very hot), lists filtered by
+        payment_status + status with sort on created_at, search on email.
+      • *_log / callbacks: time-ordered reads + key-based dedupe lookups.
+      • analytics_events: event × time range aggregations.
+    """
+    try:
+        # applications — primary hot collection
+        await db.applications.create_index("tracking_no", unique=False, name="tracking_no_1")
+        await db.applications.create_index("email", name="email_1")
+        await db.applications.create_index([("payment_status", 1), ("status", 1), ("created_at", -1)], name="pay_status_created_1")
+        await db.applications.create_index("created_at", name="created_at_desc_1")
+        await db.applications.create_index("submitted_at", name="submitted_at_1", sparse=True)
+
+        # Payment event collections — dedupe lookups by provider reference / key
+        await db.hubtel_callbacks.create_index("client_reference", name="client_reference_1")
+        await db.hubtel_callbacks.create_index("checkout_id", name="checkout_id_1")
+        await db.hubtel_callbacks.create_index("created_at", name="created_at_desc_1")
+        await db.crypto_payments.create_index("payment_id", name="payment_id_1")
+        await db.crypto_payments.create_index("tracking_no", name="tracking_no_1")
+        await db.crypto_payments.create_index("created_at", name="created_at_desc_1")
+
+        # payment_notifications_log — idempotency key is the primary lookup
+        await db.payment_notifications_log.create_index("key", unique=True, name="key_unique_1")
+
+        # Audit logs + analytics — chronological reads
+        await db.email_log.create_index("created_at", name="created_at_desc_1")
+        await db.analytics_events.create_index([("event", 1), ("created_at", -1)], name="event_time_1")
+        await db.analytics_events.create_index("path", name="path_1")
+
+        # Settings / admins
+        await db.admins.create_index("email", unique=True, name="email_unique_1")
+        logger.info("Mongo indexes ensured.")
+    except Exception as e:
+        logger.warning(f"Index creation issue (non-fatal): {e}")
 
 
 # ────────────────────────── HELPERS ──────────────────────────
@@ -439,6 +576,12 @@ async def create_application(payload: ApplicationIn):
         "payment_transaction_id": None,
         "documents": {},
         "created_at": now_iso(),
+        # submitted_at marks the moment the applicant definitively sent the
+        # form. In the current flow there is no draft stage — every POST is a
+        # final submission — so it equals created_at. Kept as a distinct field
+        # so legacy records (which lack it) remain visually distinguishable
+        # from records with a confirmed submission timestamp.
+        "submitted_at": now_iso(),
         "updated_at": now_iso(),
     }
     await db.applications.insert_one(dict(doc))
@@ -739,6 +882,23 @@ async def hubtel_webhook(request: Request):
             {"tracking_no": client_ref},
             {"$set": {"payment_status": "failed", "updated_at": now_iso()}},
         )
+        # Fire admin alert — idempotent. Hubtel delivered an authenticated
+        # non-success callback, so we treat it as a confirmed failure.
+        await _notify_payment_event(
+            "failed",
+            tracking=client_ref,
+            reference=checkout_id or app_doc.get("payment_transaction_id"),
+            context={
+                "tracking": client_ref,
+                "name": app_doc.get("full_name", ""),
+                "amount": f"{float(app_doc.get('amount_usd') or 0):.2f}",
+                "currency": "USD",
+                "provider": "Hubtel",
+                "reference": checkout_id or app_doc.get("payment_transaction_id") or "—",
+                "status": (inner.get("Status") or data.get("Status") or "failed"),
+                "event_time": now_iso(),
+            },
+        )
     return {"ok": True}
 
 
@@ -838,11 +998,57 @@ async def admin_kpis(ctx: dict = Depends(require_admin)):
 
 
 @api.get("/admin/applications")
-async def admin_applications(status: str = Query("all"), ctx: dict = Depends(require_admin)):
-    q = {"payment_status": "paid"}
+async def admin_applications(
+    status: str = Query("all"),
+    search: str = Query("", description="Case-insensitive match on tracking_no, full_name or email"),
+    from_date: str = Query("", description="Inclusive lower bound on created_at (ISO date YYYY-MM-DD, interpreted as UTC midnight)"),
+    to_date: str = Query("", description="Inclusive upper bound on created_at (ISO date YYYY-MM-DD, interpreted as UTC end-of-day)"),
+    page: int = Query(1, ge=1, description="1-indexed page number"),
+    page_size: int = Query(100, ge=1, le=1000, description="Items per page (capped at 1000)"),
+    ctx: dict = Depends(require_admin),
+):
+    """List applications. All new filters are optional and additive — existing
+    callers (no params) see the exact same payload shape as before, just now
+    capped at page_size items (default 100 instead of the old blind 1000)."""
+    q: dict = {"payment_status": "paid"}
     if status in ("submitted", "in_progress", "done"):
         q["status"] = status
-    docs = await db.applications.find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
+
+    # --- Search (case-insensitive across identifying fields) ---
+    s = (search or "").strip()
+    if s:
+        # Escape regex metacharacters so operators can paste real email/tracking.
+        safe = re.escape(s)
+        q["$or"] = [
+            {"tracking_no": {"$regex": safe, "$options": "i"}},
+            {"full_name": {"$regex": safe, "$options": "i"}},
+            {"email": {"$regex": safe, "$options": "i"}},
+        ]
+
+    # --- Period filter — uses submitted_at when present, falls back to
+    # created_at for legacy records, so the filter targets exactly the field
+    # the Dashboard column displays. ---
+    if from_date or to_date:
+        bounds = []
+        effective = {"$ifNull": ["$submitted_at", "$created_at"]}
+        if from_date:
+            bounds.append({"$gte": [effective, f"{from_date.strip()}T00:00:00+00:00"]})
+        if to_date:
+            bounds.append({"$lte": [effective, f"{to_date.strip()}T23:59:59.999999+00:00"]})
+        q["$expr"] = {"$and": bounds} if len(bounds) > 1 else bounds[0]
+
+    # Sort is always by the effective submission time (desc). We use a Mongo
+    # aggregation pipeline so legacy records sort with the same key the UI shows.
+    skip = (page - 1) * page_size
+    pipeline = [
+        {"$match": q},
+        {"$addFields": {"_effective_at": {"$ifNull": ["$submitted_at", "$created_at"]}}},
+        {"$sort": {"_effective_at": -1}},
+        {"$skip": skip},
+        {"$limit": page_size},
+        {"$project": {"_id": 0, "_effective_at": 0}},
+    ]
+    docs = await db.applications.aggregate(pipeline).to_list(page_size)
     return docs
 
 
@@ -852,6 +1058,117 @@ async def admin_application_detail(tracking_no: str, ctx: dict = Depends(require
     if not doc:
         raise HTTPException(status_code=404, detail="Not found")
     return doc
+
+
+# ----------------- Payments / Transactions (read-only, unified) -----------------
+from transactions_service import list_transactions, compute_summary, to_csv, to_xlsx
+
+
+@api.get("/admin/transactions")
+async def admin_transactions(
+    provider: str = Query(""),
+    status: str = Query(""),
+    search: str = Query(""),
+    from_date: str = Query(""),
+    to_date: str = Query(""),
+    ctx: dict = Depends(require_admin),
+):
+    """Unified, deduplicated read of every known transaction across Hubtel
+    callbacks, NOWPayments callbacks, and confirmed payments on the
+    applications collection. Strictly read-only."""
+    txs = await list_transactions(
+        db,
+        provider=provider, status=status, search=search,
+        from_date=from_date, to_date=to_date,
+    )
+    return {
+        "transactions": txs,
+        "summary": compute_summary(txs),
+    }
+
+
+@api.get("/admin/transactions/{tx_id:path}")
+async def admin_transaction_detail(tx_id: str, ctx: dict = Depends(require_admin)):
+    """Detail view for a single transaction. Returns the normalized tx plus
+    the raw source document and, when matched, the parent application doc."""
+    txs = await list_transactions(db)
+    match = next((t for t in txs if t["id"] == tx_id), None)
+    if not match:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    raw = None
+    if match["source"] == "application":
+        raw = await db.applications.find_one({"tracking_no": match["tracking_no"]}, {"_id": 0})
+    elif match["source"] == "hubtel_callback":
+        raw = await db.hubtel_callbacks.find_one(
+            {"$or": [{"provider_reference": match["provider_reference"]},
+                     {"transaction_id": match["provider_reference"]}]},
+            {"_id": 0},
+        )
+    elif match["source"] == "crypto_payments":
+        raw = await db.crypto_payments.find_one(
+            {"$or": [{"invoice_id": match["provider_reference"]},
+                     {"payment_id": match["provider_reference"]}]},
+            {"_id": 0},
+        )
+    app_doc = None
+    if match.get("tracking_no"):
+        app_doc = await db.applications.find_one(
+            {"tracking_no": match["tracking_no"]},
+            {"_id": 0, "documents": 0},  # hide big binary refs
+        )
+    return {"transaction": match, "raw": raw, "application": app_doc}
+
+
+@api.get("/admin/transactions.csv")
+async def admin_transactions_csv(
+    provider: str = Query(""),
+    status: str = Query(""),
+    search: str = Query(""),
+    from_date: str = Query(""),
+    to_date: str = Query(""),
+    ctx: dict = Depends(require_admin),
+):
+    """CSV export honoring the same filters as the list endpoint."""
+    txs = await list_transactions(
+        db,
+        provider=provider, status=status, search=search,
+        from_date=from_date, to_date=to_date,
+    )
+    csv_text = to_csv(txs)
+    filename = f"transactions-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.csv"
+    return Response(
+        content=csv_text,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@api.get("/admin/transactions.xlsx")
+async def admin_transactions_xlsx(
+    provider: str = Query(""),
+    status: str = Query(""),
+    search: str = Query(""),
+    from_date: str = Query(""),
+    to_date: str = Query(""),
+    ctx: dict = Depends(require_admin),
+):
+    """Professional Excel (.xlsx) export honoring the same filters as the
+    list endpoint. Includes a Summary sheet with revenue by (provider,
+    currency) computed via Excel formulas that exclude audit-only rows."""
+    txs = await list_transactions(
+        db,
+        provider=provider, status=status, search=search,
+        from_date=from_date, to_date=to_date,
+    )
+    blob = to_xlsx(txs)
+    filename = f"transactions-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.xlsx"
+    return Response(
+        content=blob,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 
 
 class StatusIn(BaseModel):
@@ -1455,6 +1772,30 @@ async def _apply_crypto_status_update(payment_id: str, np_status: str, payload: 
                 "payment_method": f"USDT {doc['network'].upper()} (NowPayments)",
                 "paid_at": now_iso(),
             })
+
+    # Failure-lifecycle alerts — only on confirmed provider status strings.
+    # NowPayments documented terminal/incident statuses:
+    #   failed, expired  → failure
+    #   refunded         → refund
+    # "partially_paid" and "confirming" stay silent (not confirmed).
+    elif np_status in ("failed", "expired", "refunded"):
+        event = {"failed": "failed", "expired": "expired", "refunded": "refunded"}[np_status]
+        app_doc = await db.applications.find_one({"tracking_no": doc.get("tracking_no")}, {"_id": 0}) if doc.get("tracking_no") else None
+        await _notify_payment_event(
+            event,
+            tracking=doc.get("tracking_no"),
+            reference=payment_id,
+            context={
+                "tracking": doc.get("tracking_no") or "—",
+                "name": (app_doc or {}).get("full_name", "—"),
+                "amount": f"{float(doc.get('amount') or (app_doc or {}).get('amount_usd') or 0):.2f}",
+                "currency": (doc.get("pay_currency") or "USDT").upper(),
+                "provider": f"NOWPayments ({(doc.get('network') or 'crypto').upper()})",
+                "reference": payment_id,
+                "status": np_status,
+                "event_time": now_iso(),
+            },
+        )
 
 
 @app.post("/api/webhooks/nowpayments")
