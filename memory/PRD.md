@@ -288,3 +288,4 @@ Build a full-stack Ghana Visa On Arrival web application for **eghanavisa.com** 
 - VisaSample.jsx: header "eGhanaVisa · Fictitious example" + "Not a real visa" badge, SAMPLE / ILLUSTRATION watermark, disclaimer footer; removed "Republic of Ghana", "Comptroller-General of Immigration", "Employment Prohibited", flag-coloured QR mock.
 - Footer.jsx contact note: replaced "Comptroller-General of Immigration / Republic of Ghana" with "eGhanaVisa — independent private visa assistance service".
 - Tested iteration_17 (100% frontend). Deployment on hold until Emergent lifts the classifier block.
+- 2026-11-19: VisaSample wording updated per user (Visa Sample / Illustrative Visa Sample / third-party disclaimer). Tested iteration_18.

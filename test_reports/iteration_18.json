@@ -1,0 +1,20 @@
+{
+  "summary": "Frontend-only test of the VisaSample.jsx text changes on /apply, at desktop 1920x800 and mobile 390x844. The cookie banner was dismissed through localStorage egv_cookie_consent_v1. All checks match exactly (compared against textContent): the header reads 'eGhanaVisa · Visa Sample', the badge reads 'Illustrative Visa Sample', the watermark reads 'Sample / Illustration' (CSS shows it in capitals), and the disclaimer matches the requested sentence word for word. A DOM check found no element outside the card, no scrolling inner element and no horizontal page scroll at either size (docW = viewport). The page innerText contains none of 'fictitious', 'not a real visa' or 'not an authentic visa'. Regression: the typed name, passport number, arrival date and departure date show live in the sample, and all 6 values stay blurred (blur(4px)). Live summary: Regular $350, Express +$50 = $400, Priority +$25 = $375, back to Regular $350, and the submit button label matches each time. The footer non-affiliation disclaimer is still present. Nothing was submitted and no data was changed.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/apply VisaSample", "issues": ["The disclaimer is 9px on mobile and 10px on desktop. It is readable but small, so 11px on desktop is optional.", "The badge has no data-testid. It was checked as the sibling of visa-sample-header. Optional: add data-testid='visa-sample-badge'.", "On mobile, the floating chat/WhatsApp buttons partly cover the 'This is a sample preview...' note under the card. This is cosmetic and existed before this change."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": ["VisaSample.jsx only has the requested text changes. The watermark keeps pointer-events-none, there are no images or SVGs, and the aria-label marks the card as an illustration. Optional: add data-testid to the badge span."],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped)", "frontend": "100%"},
+  "seed_data_creation": "None. Form fields were typed with TEST_ values but never submitted.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Use an add_init_script that sets localStorage egv_cookie_consent_v1 to suppress the cookie banner. The badge is the next element after [data-testid=visa-sample-header]. Header and badge use CSS uppercase, so compare textContent, not innerText."
+}
