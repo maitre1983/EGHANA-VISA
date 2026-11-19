@@ -1,0 +1,42 @@
+{
+  "summary": "Post-merge non-regression test of the 5 lots. Backend: 19/19 pytest pass after one fix (18/19 before). Checked: admin login/JWT, KPIs (revenue_usd=700, total=2, done=1, submitted=1), /api/config fields, HEAD /api/config (200, 0 bytes), auth guard on admin endpoints. LOT1: /admin/applications pagination, page_size cap (1001 gives 422, 1000 gives 200), search, date filters. LOT2: /admin/transactions shape and filters, detail endpoint (200/404), CSV headers. LOT5: XLSX has 2 sheets and 13 columns. LOT3: the 3 email templates exist. LOT4: all indexes exist and key_unique_1 is unique. Frontend (Playwright, 1920x1080): admin login, dashboard showing GH-2026-318639 and GH-2026-204806, the lazy-loaded /admin/payments page (route-loading fallback seen, HUBTEL 700 USD card, status counts, 2 rows), both export downloads, the detail modal with raw JSON, the provider/status/search/date filters, the other lazy admin routes. No console errors. WhatsApp widget, Abena chat (AI reply about the $350 price) and the full Apply flow (home card, apply form, 4 uploads, /payment/{tracking} with Hubtel and 2 USDT buttons) all work.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/admin/transactions.xlsx", "issue": "Summary sheet COUNTIFS formula used LibreOffice syntax 'Transactions.G:G' instead of Excel syntax 'Transactions!G:G'. Excel would show #NAME? or a repair prompt. FIXED by the testing agent in transactions_service.py line 401."},
+      {"endpoint": "/api/admin/applications", "issue": "Returns a bare list with no total or has_more. The frontend cannot show page counts. This was likely kept on purpose for backward compatibility; consider an X-Total-Count header."},
+      {"endpoint": "_notify_payment_event", "issue": "Dedupe is check-then-upsert, so two webhooks arriving at the same time can both pass the find_one and both send. The unique index does not stop it because both upsert the same key. Use an atomic find_one_and_update with status != 'sent'. Also, when no admin recipients are set, the entry is marked 'failed' with 'all 0 recipients failed'."},
+      {"endpoint": "JWT", "issue": "Backend logs InsecureKeyLengthWarning: the HMAC key is 9 bytes. Use a JWT secret of 32 bytes or more in production."},
+      {"endpoint": "/api/admin/email-templates", "issue": "to_list(100) limits the list to 100 templates (11 now). Not a problem today."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AdminLayout sidebar NAV", "issue": "There is no 'Payments' entry in the admin sidebar. /admin/payments only opens by typing the URL. Add { to: '/admin/payments', label: 'Payments', icon: CreditCard } to NAV in AdminLayout.jsx.", "selector": "[data-testid^=admin-nav-]", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/admin/payments", "issues": ["From/To date filters use the browser's native date picker instead of the shadcn Calendar/Popover.", "On mount, load() runs twice: once from the mount effect and once from the debounced filter effect."]},
+      {"screen": "/payment/{tracking}", "issues": ["After submitting Apply, the payment page keeps the scroll position, so the Hubtel button is cut off above the fold. Add ScrollToTop on route change."]},
+      {"screen": "Floating widgets", "issues": ["The Abena launcher (dark circle) has low contrast over the dark footer.", "The WhatsApp panel avatar shows the initials 'A·' instead of an image. Probably intended."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iteration13_five_lots.py", "/app/test_reports/pytest/pytest_iter13.xml"],
+  "action_items": [
+    "Add a Payments link to the AdminLayout sidebar (HIGH: the new LOT 2 page cannot be reached from the UI)",
+    "Make the payment-notification dedupe atomic (find_one_and_update / insert-with-unique-key-first)",
+    "Optional: return a total count for paginated /admin/applications",
+    "Optional: use the shadcn calendar for the payments date filters; scroll to top on route change"
+  ],
+  "critical_code_review_comments": [
+    "server.py is 2540 lines. Split the admin, payments and public routers into modules.",
+    "transactions_service loads every application, hubtel_callback and crypto_payment into memory on each request, including the detail endpoint. This is fine now but will not scale. Push filters into Mongo queries and look up details by source key.",
+    "Date filtering compares ISO strings. This works because every value is a '+00:00' string. If any doc stores a datetime or a 'Z' suffix, it will silently fail the filter."
+  ],
+  "updated_files": ["/app/backend/transactions_service.py (Excel formula sheet-reference fix '.' -> '!')", "/app/backend/tests/test_iteration13_five_lots.py (new)"],
+  "success_rate": {"backend": "100% (19/19) after fix; 18/19 before", "frontend": "95% (all flows work; Payments nav link missing)"},
+  "seed_data_creation": "Created one application through the UI Apply flow (GH-2026-657044, TEST_Iter13 Runner, test_iter13@example.com, unpaid) and deleted it from Mongo by tracking_no. Its 4 uploaded 200x200 white test JPGs may still be in the storage backend; they are no longer referenced by any record. No payments were triggered.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "test_iteration13_five_lots.py is read-only and safe to rerun. It inspects Mongo indexes directly through backend/.env. The DB has 9 applications, 2 of them paid (GH-2026-318639, GH-2026-204806), and 0 hubtel_callbacks or crypto_payments, so the unmatched/deduplicated paths were NOT tested with real data. Email templates use the field 'template_name', not 'name'. Do not run wipe-all."
+}

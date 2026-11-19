@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import api from "../lib/api";
 import { toast } from "sonner";
 import { Save } from "lucide-react";
+import { SmsSettings } from "../components/SmsSettings";
 
 const AI_MODELS = [
     "claude-sonnet-4-5-20250929",
@@ -12,7 +13,7 @@ const AI_MODELS = [
     "gemini-3-flash-preview",
 ];
 
-const SEC = { prices: "Visa Prices", types: "Visa Types", methods: "Payment Methods", hubtel: "Hubtel API", fx: "Exchange Rate", nowpayments: "NowPayments (USDT)", storage: "Storage (R2)", other: "WhatsApp & AI", analytics: "Analytics IDs", danger: "Danger Zone" };
+const SEC = { prices: "Visa Prices", types: "Visa Types", methods: "Payment Methods", hubtel: "Hubtel API", fx: "Exchange Rate", nowpayments: "NowPayments (USDT)", sms: "SMS Alerts", storage: "Storage (R2)", other: "WhatsApp & AI", analytics: "Analytics IDs", danger: "Danger Zone" };
 
 export default function AdminSettings() {
     const [tab, setTab] = useState("prices");
@@ -178,6 +179,7 @@ export default function AdminSettings() {
                 {tab === "analytics" && <AnalyticsIdsForm initial={s} onReload={reload} />}
                 {tab === "storage" && <R2StorageForm initial={s} onReload={reload} />}
                 {tab === "fx" && <FxForm initial={s} onReload={reload} />}
+                {tab === "sms" && <SmsSettings initial={s.sms || {}} onReload={reload} />}
                 {tab === "danger" && <DangerZone onReload={reload} />}
             </div>
         </div>

@@ -238,7 +238,25 @@ Build a full-stack Ghana Visa On Arrival web application for **eghanavisa.com** 
 - **Verified**: All 7 sampled routes now return `200/401/404/405` with **0 body bytes** on HEAD while GET/POST are untouched. Admin login → dashboard loads cleanly with zero console errors. No new endpoint introduced returns empty/malformed responses.
 
 ## Backlog (P0/P1/P2 remaining)
-- **P0**: Abena Tickets Admin UI + SMS Integration (Admin Dashboard view for escalated tickets, SMS notif for admins).
+- **P0**: Abena Tickets Admin UI + SMS Integration (Admin Dashboard view for escalated tickets, SMS notif for admins via Hubtel SMS).
 - **P1**: Abena Learning System + AI Analytics Dashboard.
-- **P2**: Performance optimizations (lazy loading, caching, CDN).
+- **P2**: Performance — further wins (image optim, prefetch, service worker).
 - **P3**: Payment Gateway Health Monitoring (Hubtel / NowPayments ping).
+
+## Iteration 15 (2026-11-19) — Integration of 5 Lots from feature/eghanavisa-five-lots (GitHub)
+- **Source**: `maitre1983/EGHANA-VISA` @ `a7f73ee4c2ac3c029c017a6f3b71794f214e378a`
+- **Method**: Selective integration — repo was a strict superset, verified file-by-file. Backup saved to `/app/_backup_pre_merge_20261119_190536/`.
+- **Lot 1 — Dashboard SUBMITTED AT**: `submitted_at` persisted on submission, `$ifNull(submitted_at, created_at)` fallback for legacy rows. `GET /api/admin/applications` now accepts `page, page_size (max 1000), search, from_date, to_date`.
+- **Lot 2 — Unified financial history**: New `backend/transactions_service.py` (419 lines) aggregating `applications` (paid), `hubtel_callbacks`, `crypto_payments`. New endpoints `GET /api/admin/transactions`, `/transactions/{id}`, `/transactions.csv`. New frontend page `AdminPayments.jsx` at `/admin/payments` with search/filter/sort + revenue cards + reconciliation + Unmatched/Deduplicated tagging.
+- **Lot 3 — Payment lifecycle emails**: 3 new templates `admin_payment_failed`, `admin_payment_expired`, `admin_payment_refunded` seeded (templates version 5→6). New helper `_notify_payment_event()` with idempotent `payment_notifications_log` collection (status ∈ {pending, sent, failed}, attempts, sent/failed counts). Replay blocked if status=sent, retry allowed if status=failed.
+- **Lot 4 — Performance**: New `_ensure_indexes()` at startup (idempotent): `applications(tracking_no, email, payment_status+status+created_at, created_at, submitted_at sparse)`, `hubtel_callbacks(client_reference, checkout_id, created_at)`, `crypto_payments(payment_id, tracking_no, created_at)`, `payment_notifications_log(key UNIQUE)`, `email_log(created_at)`, `analytics_events(event_time, path)`, `admins(email UNIQUE)`. React code-splitting: `Admin*` + `Seo/Nationality` pages via `lazy()` + `<Suspense>`. Server-side pagination on `/admin/applications`.
+- **Lot 5 — Excel export**: New endpoint `GET /api/admin/transactions.xlsx` using `openpyxl==3.1.5`. 2 sheets (Transactions 13 cols + Summary with totals by provider×currency). Formula-injection protection.
+- **Preserved from local fork**: `HEADAsGETMiddleware` (Cloudflare 520 fix), conversational WhatsApp widget, Abena chat, Hubtel/NOWPayments/Resend/R2/fx_service integrations, scrub of phishing keywords from `seed_data.py` (admin emails stay in DB only, not in code).
+- **Verified end-to-end (preview)**:
+    - All Mongo indexes created correctly (`Mongo indexes ensured.` at startup).
+    - Login + Dashboard + Payments page render without console errors.
+    - `GET /api/admin/transactions.csv` returns 455B valid CSV.
+    - `GET /api/admin/transactions.xlsx` returns 6566B valid Microsoft Excel 2007+ file (2 sheets).
+    - KPI `revenue_usd=$700` unchanged (2 Hubtel sandbox payments reconciled).
+    - 3 new email templates seeded (`admin_payment_failed/expired/refunded`).
+    - HEAD request on `/api/config` returns 200 (Cloudflare fix preserved).

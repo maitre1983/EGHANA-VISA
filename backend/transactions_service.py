@@ -398,7 +398,7 @@ def to_xlsx(txs: list[dict]) -> bytes:
         c_amt.number_format = "#,##0.00"
         # Count paid tx for this (provider, currency) — formula over Sheet 1
         s.cell(row=row, column=4,
-               value=f'=COUNTIFS(Transactions.G:G,"{item["provider"]}",Transactions.F:F,"{item["currency"]}",Transactions.J:J,"paid",Transactions.K:K,FALSE)')
+               value=f'=COUNTIFS(Transactions!G:G,"{item["provider"]}",Transactions!F:F,"{item["currency"]}",Transactions!J:J,"paid",Transactions!K:K,FALSE)')
         row += 1
 
     # Status counts block

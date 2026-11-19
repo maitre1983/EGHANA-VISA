@@ -1,0 +1,8 @@
+crons:
+  - name: gateway-health
+    description: "Checks Hubtel and NowPayments every 15 minutes and alerts admins when one goes down"
+    cron: "*/15 * * * *"
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    endpoint: "{{BASE_URL}}/api/cron/gateway-health"
+    method: POST
+    enabled: true

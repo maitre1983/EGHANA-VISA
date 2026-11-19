@@ -32,6 +32,9 @@ const AdminPayments = lazy(() => import("./pages/AdminPayments"));
 const AdminSettings = lazy(() => import("./pages/AdminSettings"));
 const AdminTemplates = lazy(() => import("./pages/AdminTemplates"));
 const AdminAnalytics = lazy(() => import("./pages/AdminAnalytics"));
+const AdminTickets = lazy(() => import("./pages/AdminTickets"));
+const AdminHealth = lazy(() => import("./pages/AdminHealth"));
+const AdminActivity = lazy(() => import("./pages/AdminActivity"));
 
 const RouteFallback = () => (
     <div className="min-h-[50vh] flex items-center justify-center text-slate-400 text-sm" data-testid="route-loading">Loading…</div>
@@ -82,6 +85,9 @@ function App() {
                         <Route path="/admin/settings" element={<AdminSettings />} />
                         <Route path="/admin/templates" element={<AdminTemplates />} />
                         <Route path="/admin/analytics" element={<AdminAnalytics />} />
+                        <Route path="/admin/tickets" element={<AdminTickets />} />
+                        <Route path="/admin/monitoring" element={<AdminHealth />} />
+                        <Route path="/admin/activity" element={<AdminActivity />} />
                     </Route>
                 </Routes>
                 </Suspense>

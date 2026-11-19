@@ -54,6 +54,12 @@ from analytics_service import (
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
+import asyncio
+import hmac
+import sms_service as sms
+from audit_service import AuditMiddleware
+from health_service import run_checks as _run_gateway_checks
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -102,6 +108,7 @@ class HEADAsGETMiddleware:
 
 
 app.add_middleware(HEADAsGETMiddleware)
+app.add_middleware(AuditMiddleware, db=db)
 
 
 def now_iso():
@@ -240,6 +247,17 @@ async def _notify_payment_event(event: str, *, tracking: str | None, reference: 
 
 
 
+def _sms_alert(event: str, content: str) -> None:
+    """Fire-and-forget admin SMS (never blocks or fails the caller)."""
+    async def _run():
+        try:
+            s = await get_settings()
+            await sms.send_admin_sms(db, s.get("sms") or {}, event, content)
+        except Exception as e:
+            logger.warning(f"SMS alert failed ({event}): {e}")
+    asyncio.create_task(_run())
+
+
 # ────────────────────────── STARTUP ──────────────────────────
 async def _seed_default_admin() -> None:
     admin_email = os.environ.get("DEFAULT_ADMIN_EMAIL", "admin@eghanavisa.com")
@@ -331,6 +349,8 @@ async def _seed_or_migrate_settings() -> None:
                 r2_changed = True
         if r2_changed:
             updates["r2"] = r2_patched
+    if "sms" not in existing:
+        updates["sms"] = dict(sms.DEFAULT_SMS)
     if "fx" not in existing:
         updates["fx"] = DEFAULT_SETTINGS["fx"]
     else:
@@ -386,6 +406,13 @@ async def _seed_email_templates_if_needed() -> None:
     doc = await db.template_versions.find_one({"id": "email_templates"}, {"_id": 0})
     current = (doc or {}).get("version", 0)
     if current >= EMAIL_TEMPLATES_VERSION:
+        # Add newly introduced templates without touching admin-edited ones.
+        for t in DEFAULT_EMAIL_TEMPLATES:
+            await db.email_templates.update_one(
+                {"template_name": t["template_name"], "lang": t["lang"]},
+                {"$setOnInsert": dict(t)},
+                upsert=True,
+            )
         return
     await db.email_templates.delete_many({})
     await db.email_templates.insert_many([dict(t) for t in DEFAULT_EMAIL_TEMPLATES])
@@ -441,6 +468,12 @@ async def _ensure_indexes() -> None:
 
         # Settings / admins
         await db.admins.create_index("email", unique=True, name="email_unique_1")
+        await db.admin_audit_log.create_index("created_at", name="created_at_desc_1")
+        await db.admin_audit_log.create_index("admin_email", name="admin_email_1")
+        await db.sms_log.create_index("created_at", name="created_at_desc_1")
+        await db.gateway_health.create_index("checked_at", name="checked_at_desc_1")
+        await db.cron_runs.create_index("run_id", unique=True, name="run_id_unique_1")
+        await db.support_tickets.create_index([("status", 1), ("created_at", -1)], name="status_created_1")
         logger.info("Mongo indexes ensured.")
     except Exception as e:
         logger.warning(f"Index creation issue (non-fatal): {e}")
@@ -601,6 +634,9 @@ async def create_application(payload: ApplicationIn):
         "arrival_date": doc["arrival_date"],
         "submitted_at": doc["created_at"],
     })
+    _sms_alert("new_submission",
+               f"eGhanaVisa: new application {doc['tracking_no']} - {doc['full_name']} "
+               f"({doc['visa_name']}, {doc['processing']}) ${doc['amount_usd']:.2f}")
     return doc
 
 
@@ -772,6 +808,9 @@ async def _mark_application_paid(app_doc: dict, payment_method: str) -> bool:
         "payment_method": payment_method,
         "paid_at": now_iso(),
     })
+    _sms_alert("payment_success",
+               f"eGhanaVisa: PAID {app_doc['tracking_no']} - {app_doc['full_name']} "
+               f"${app_doc['amount_usd']:.2f} via {payment_method}")
     return True
 
 
@@ -1435,6 +1474,7 @@ async def admin_get_settings(ctx: dict = Depends(require_admin)):
     # Redact R2 secret before returning
     if isinstance(s.get("r2"), dict):
         s["r2"] = _redact_r2(s["r2"])
+    s["sms"] = sms.redact(s.get("sms") or {})
     return s
 
 
@@ -1894,6 +1934,9 @@ async def chat_endpoint(payload: ChatIn):
             ) if (s.get("admin_notification_email") or "").strip() else None
         except Exception as e:
             logger.warning(f"Escalation notification failed: {e}")
+        who = payload.contact_name or payload.contact_email or "visitor"
+        _sms_alert("ticket_escalated",
+                   f"eGhanaVisa: Abena escalated a ticket from {who}: {payload.message[:90]}")
 
     await db.chat_log.insert_one({
         "id": str(uuid.uuid4()),
@@ -1945,19 +1988,207 @@ async def admin_reply_ticket(ticket_id: str, payload: TicketReplyIn, ctx: dict =
         try:
             await email_svc.send(
                 recipient=customer_email,
-                template_name="submitted",  # generic — real templates should include a "support_reply" one
+                template_name="support_reply",
                 lang="en",
                 context={
                     "name": t.get("customer_name") or "Traveller",
                     "tracking": t.get("tracking_no") or f"TKT-{ticket_id[:8]}",
-                    "visa_type": "Support",
-                    "processing": "Reply from our team",
-                    "amount": "-",
+                    "question": t.get("question") or "",
+                    "reply": payload.reply,
                 },
             )
         except Exception as e:
             logger.warning(f"Ticket reply email failed: {e}")
+    return {"ok": True, "emailed": bool(customer_email)}
+
+
+class TicketStatusIn(BaseModel):
+    status: str
+
+
+@api.post("/admin/support-tickets/{ticket_id}/status")
+async def admin_ticket_status(ticket_id: str, payload: TicketStatusIn, ctx: dict = Depends(require_admin)):
+    if payload.status not in ("open", "resolved"):
+        raise HTTPException(status_code=400, detail="Invalid status")
+    res = await db.support_tickets.update_one(
+        {"id": ticket_id}, {"$set": {"status": payload.status, "updated_at": now_iso()}}
+    )
+    if not res.matched_count:
+        raise HTTPException(status_code=404, detail="Ticket not found")
     return {"ok": True}
+
+
+@api.get("/admin/support-tickets/{ticket_id}/conversation")
+async def admin_ticket_conversation(ticket_id: str, ctx: dict = Depends(require_admin)):
+    t = await db.support_tickets.find_one({"id": ticket_id}, {"_id": 0})
+    if not t:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    msgs = await db.chat_log.find(
+        {"session_id": t.get("session_id")},
+        {"_id": 0, "user_message": 1, "ai_reply": 1, "created_at": 1, "escalated": 1},
+    ).sort("created_at", 1).limit(100).to_list(100)
+    return {"ticket": t, "messages": msgs}
+
+
+# ─────────── SMS alerts (Hubtel) ───────────
+class SmsConfigIn(BaseModel):
+    enabled: bool = False
+    client_id: str = ""
+    client_secret: str = ""
+    sender_id: str = ""
+    admin_numbers: List[str] = []
+    events: dict = {}
+
+
+@api.post("/admin/settings/sms")
+async def admin_update_sms(payload: SmsConfigIn, ctx: dict = Depends(require_admin)):
+    s = await get_settings()
+    current = s.get("sms") or {}
+    sender = payload.sender_id.strip()
+    if sender and (len(sender) > 11 or not sender.replace(" ", "").isalnum()):
+        raise HTTPException(status_code=400, detail="Sender ID must be max 11 letters/digits")
+    numbers = []
+    for raw in payload.admin_numbers:
+        n = sms.normalize_number(raw)
+        if not n:
+            continue
+        if not (10 <= len(n) <= 15):
+            raise HTTPException(status_code=400, detail=f"Invalid phone number: {raw}")
+        if n not in numbers:
+            numbers.append(n)
+    cfg = {
+        "enabled": payload.enabled,
+        "client_id": payload.client_id.strip(),
+        # Empty secret means "keep the stored one" (UI never receives it back).
+        "client_secret": payload.client_secret.strip() or current.get("client_secret", ""),
+        "sender_id": sender,
+        "admin_numbers": numbers,
+        "events": {e: bool(payload.events.get(e, False)) for e in sms.SMS_EVENTS},
+    }
+    if cfg["enabled"] and not sms.is_configured(cfg):
+        raise HTTPException(status_code=400, detail="Fill Client ID, Client Secret, Sender ID and at least one number before enabling")
+    await db.settings.update_one({"id": "singleton"}, {"$set": {"sms": cfg, "updated_at": now_iso()}})
+    return {"ok": True, "sms": sms.redact(cfg)}
+
+
+@api.post("/admin/sms/test")
+async def admin_sms_test(ctx: dict = Depends(require_admin)):
+    s = await get_settings()
+    cfg = s.get("sms") or {}
+    if not sms.is_configured(cfg):
+        raise HTTPException(status_code=400, detail="SMS is not configured yet")
+    results = await sms.send_admin_sms(db, cfg, "test", "eGhanaVisa: test SMS from the Command Center.", force=True)
+    return {"ok": any(r.get("ok") for r in results), "results": results}
+
+
+@api.get("/admin/sms-log")
+async def admin_sms_log(ctx: dict = Depends(require_admin)):
+    return await db.sms_log.find({}, {"_id": 0}).sort("created_at", -1).limit(100).to_list(100)
+
+
+# ─────────── Admin activity audit log ───────────
+@api.get("/admin/audit-log")
+async def admin_audit_log(
+    search: str = Query(""),
+    admin_email: str = Query(""),
+    only_failed: bool = Query(False),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    ctx: dict = Depends(require_admin),
+):
+    q: dict = {}
+    if admin_email:
+        q["admin_email"] = admin_email
+    if only_failed:
+        q["success"] = False
+    if search.strip():
+        q["path"] = {"$regex": re.escape(search.strip()), "$options": "i"}
+    total = await db.admin_audit_log.count_documents(q)
+    items = await db.admin_audit_log.find(q, {"_id": 0}).sort("created_at", -1) \
+        .skip((page - 1) * page_size).limit(page_size).to_list(page_size)
+    admins = await db.admin_audit_log.distinct("admin_email")
+    return {"items": items, "total": total, "page": page, "page_size": page_size,
+            "admins": sorted(a for a in admins if a)}
+
+
+# ─────────── Payment gateway health monitoring ───────────
+GATEWAY_LABELS = {"hubtel": "Hubtel (card payments)", "nowpayments": "NowPayments (crypto)", "hubtel_sms": "Hubtel SMS"}
+
+
+async def _check_gateways_and_alert() -> dict:
+    s = await get_settings()
+    report = await _run_gateway_checks(s)
+    prev = await db.gateway_health.find_one({}, {"_id": 0}, sort=[("checked_at", -1)])
+    prev_status = {r["gateway"]: r["status"] for r in (prev or {}).get("results", [])}
+    await db.gateway_health.insert_one(dict(report))
+    report.pop("_id", None)
+    for r in report["results"]:
+        before = prev_status.get(r["gateway"])
+        if before is None or before == r["status"]:
+            continue
+        state = "DOWN" if r["status"] == "down" else "BACK UP"
+        label = GATEWAY_LABELS.get(r["gateway"], r["gateway"])
+        await _notify_admin("admin_gateway_down", {
+            "gateway": label, "state": state, "detail": r["detail"],
+            "checked_at": report["checked_at"], "tracking": "",
+        })
+        await sms.send_admin_sms(db, s.get("sms") or {}, "gateway", f"eGhanaVisa: {label} is {state} ({r['detail'][:60]})", force=bool((s.get("sms") or {}).get("enabled")))
+    return report
+
+
+@api.post("/admin/health/check")
+async def admin_health_check(ctx: dict = Depends(require_admin)):
+    return await _check_gateways_and_alert()
+
+
+@api.get("/admin/health")
+async def admin_health(ctx: dict = Depends(require_admin)):
+    history = await db.gateway_health.find({}, {"_id": 0}).sort("checked_at", -1).limit(96).to_list(96)
+    since = datetime.fromtimestamp(datetime.now(timezone.utc).timestamp() - 86400, tz=timezone.utc).isoformat()
+    failed_24h = await db.applications.count_documents({"payment_status": "failed", "updated_at": {"$gte": since}})
+    paid_24h = await db.applications.count_documents({"payment_status": "paid", "paid_at": {"$gte": since}})
+    last_paid = await db.applications.find_one({"payment_status": "paid"}, {"_id": 0, "paid_at": 1, "tracking_no": 1, "payment_method": 1}, sort=[("paid_at", -1)])
+    uptime = {}
+    for h in history:
+        for r in h.get("results", []):
+            u = uptime.setdefault(r["gateway"], [0, 0])
+            u[1] += 1
+            u[0] += 1 if r["status"] == "up" else 0
+    return {
+        "latest": history[0] if history else None,
+        "history": history,
+        "uptime_pct": {g: round(100 * a / b, 1) for g, (a, b) in uptime.items() if b},
+        "payments_24h": {"paid": paid_24h, "failed": failed_24h},
+        "last_paid": last_paid,
+    }
+
+
+@api.post("/cron/gateway-health")
+async def cron_gateway_health(request: Request):
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    secret = os.environ["WEBHOOK_CRON_SECRET"]
+    auth = request.headers.get("authorization", "")
+    if not auth.startswith("Bearer ") or not hmac.compare_digest(auth[7:], secret):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Invalid body")
+    run_id = request.headers.get("x-webhook-id") or body.get("run_id") or str(uuid.uuid4())
+    try:
+        await db.cron_runs.insert_one({"run_id": run_id, "job": "gateway-health", "created_at": now_iso()})
+    except Exception:
+        return {"ok": True, "duplicate": True}
+
+    async def _job():
+        try:
+            await _check_gateways_and_alert()
+        except Exception as e:
+            logger.warning(f"gateway health cron failed: {e}")
+    asyncio.create_task(_job())
+    return {"ok": True, "accepted": run_id}
 
 
 

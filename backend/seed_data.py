@@ -332,4 +332,37 @@ DEFAULT_EMAIL_TEMPLATES: List[Dict[str, Any]] = [
 """,
         ),
     ),
+    _tpl(
+        "admin_gateway_down", "en",
+        "[e.GHANA VISA] Payment gateway {{state}}: {{gateway}}",
+        _wrap(
+            "Payment Gateway Monitor",
+            """
+<p>The automatic health check reports that <strong>{{gateway}}</strong> is now <strong>{{state}}</strong>.</p>
+<table style="width:100%;font-size:14px;border-collapse:collapse;margin-top:12px;">
+  <tr><td style="padding:6px 0;color:#64748b;">Gateway</td><td style="padding:6px 0;">{{gateway}}</td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">State</td><td style="padding:6px 0;"><strong>{{state}}</strong></td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Detail</td><td style="padding:6px 0;font-family:monospace;">{{detail}}</td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Checked at</td><td style="padding:6px 0;">{{checked_at}}</td></tr>
+</table>
+<p style="margin-top:20px;text-align:center;">
+  <a href="{{backoffice_link}}" style="display:inline-block;background:#0e7d3b;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Open Back Office →</a>
+</p>
+""",
+        ),
+    ),
+    _tpl(
+        "support_reply", "en",
+        "Reply from e.GHANA VISA support — {{tracking}}",
+        _wrap(
+            "Our team has replied",
+            """
+<p>Hello {{name}},</p>
+<p>Thank you for reaching out. Here is the answer to your question:</p>
+<blockquote style="margin:12px 0;padding:8px 14px;border-left:3px solid #e5e7eb;color:#64748b;">{{question}}</blockquote>
+<div style="margin:12px 0;padding:14px;background:#f0fdf4;border-radius:8px;white-space:pre-line;">{{reply}}</div>
+<p style="color:#64748b;font-size:13px;">Reference: {{tracking}}</p>
+""",
+        ),
+    ),
 ]
