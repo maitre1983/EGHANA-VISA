@@ -902,6 +902,91 @@ async def admin_application_detail(tracking_no: str, ctx: dict = Depends(require
     return doc
 
 
+# ----------------- Payments / Transactions (read-only, unified) -----------------
+from transactions_service import list_transactions, compute_summary, to_csv
+
+
+@api.get("/admin/transactions")
+async def admin_transactions(
+    provider: str = Query(""),
+    status: str = Query(""),
+    search: str = Query(""),
+    from_date: str = Query(""),
+    to_date: str = Query(""),
+    ctx: dict = Depends(require_admin),
+):
+    """Unified, deduplicated read of every known transaction across Hubtel
+    callbacks, NOWPayments callbacks, and confirmed payments on the
+    applications collection. Strictly read-only."""
+    txs = await list_transactions(
+        db,
+        provider=provider, status=status, search=search,
+        from_date=from_date, to_date=to_date,
+    )
+    return {
+        "transactions": txs,
+        "summary": compute_summary(txs),
+    }
+
+
+@api.get("/admin/transactions/{tx_id:path}")
+async def admin_transaction_detail(tx_id: str, ctx: dict = Depends(require_admin)):
+    """Detail view for a single transaction. Returns the normalized tx plus
+    the raw source document and, when matched, the parent application doc."""
+    txs = await list_transactions(db)
+    match = next((t for t in txs if t["id"] == tx_id), None)
+    if not match:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    raw = None
+    if match["source"] == "application":
+        raw = await db.applications.find_one({"tracking_no": match["tracking_no"]}, {"_id": 0})
+    elif match["source"] == "hubtel_callback":
+        raw = await db.hubtel_callbacks.find_one(
+            {"$or": [{"provider_reference": match["provider_reference"]},
+                     {"transaction_id": match["provider_reference"]}]},
+            {"_id": 0},
+        )
+    elif match["source"] == "crypto_payments":
+        raw = await db.crypto_payments.find_one(
+            {"$or": [{"invoice_id": match["provider_reference"]},
+                     {"payment_id": match["provider_reference"]}]},
+            {"_id": 0},
+        )
+    app_doc = None
+    if match.get("tracking_no"):
+        app_doc = await db.applications.find_one(
+            {"tracking_no": match["tracking_no"]},
+            {"_id": 0, "documents": 0},  # hide big binary refs
+        )
+    return {"transaction": match, "raw": raw, "application": app_doc}
+
+
+@api.get("/admin/transactions.csv")
+async def admin_transactions_csv(
+    provider: str = Query(""),
+    status: str = Query(""),
+    search: str = Query(""),
+    from_date: str = Query(""),
+    to_date: str = Query(""),
+    ctx: dict = Depends(require_admin),
+):
+    """CSV export honoring the same filters as the list endpoint."""
+    txs = await list_transactions(
+        db,
+        provider=provider, status=status, search=search,
+        from_date=from_date, to_date=to_date,
+    )
+    csv_text = to_csv(txs)
+    filename = f"transactions-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.csv"
+    return Response(
+        content=csv_text,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+
+
 class StatusIn(BaseModel):
     status: str  # in_progress | done
 

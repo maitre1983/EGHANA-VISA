@@ -24,6 +24,7 @@ import AdminLogin from "./pages/AdminLogin";
 import AdminChangePassword from "./pages/AdminChangePassword";
 import AdminLayout from "./pages/AdminLayout";
 import AdminDashboard from "./pages/AdminDashboard";
+import AdminPayments from "./pages/AdminPayments";
 import AdminSettings from "./pages/AdminSettings";
 import AdminTemplates from "./pages/AdminTemplates";
 import AdminAnalytics from "./pages/AdminAnalytics";
@@ -68,6 +69,7 @@ function App() {
                     <Route path="/admin/change-password" element={<AdminChangePassword />} />
                     <Route element={<AdminLayout />}>
                         <Route path="/admin/dashboard" element={<AdminDashboard />} />
+                        <Route path="/admin/payments" element={<AdminPayments />} />
                         <Route path="/admin/settings" element={<AdminSettings />} />
                         <Route path="/admin/templates" element={<AdminTemplates />} />
                         <Route path="/admin/analytics" element={<AdminAnalytics />} />

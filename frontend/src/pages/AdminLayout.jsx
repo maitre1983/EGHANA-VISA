@@ -1,10 +1,11 @@
 import React from "react";
 import { NavLink, Outlet, useNavigate, Navigate } from "react-router-dom";
-import { LayoutDashboard, Settings as SettingsIcon, BarChart3, LogOut, Mail } from "lucide-react";
+import { LayoutDashboard, Settings as SettingsIcon, BarChart3, LogOut, Mail, Wallet } from "lucide-react";
 import Logo from "../components/Logo";
 
 const NAV = [
     { to: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { to: "/admin/payments", label: "Payments", icon: Wallet },
     { to: "/admin/settings", label: "Settings", icon: SettingsIcon },
     { to: "/admin/templates", label: "Emails", icon: Mail },
     { to: "/admin/analytics", label: "Analytics", icon: BarChart3 },
