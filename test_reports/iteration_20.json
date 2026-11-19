@@ -1,0 +1,16 @@
+{
+  "summary": "Frontend-only retest of the iteration_19 findings. All fixes are verified. (1) Mobile 390x844 at maximum scroll on /apply, /, /prices and /faq: the footer's last section has padding-bottom 96px. The copyright line ends at y747 and the buttons start at y772. A text-range intersection with the button rects found 0 hits. (2) A scroll scan of /apply checked 93 main and footer elements; none stays hidden at every scroll position. (3) WhatsApp: when the panel opens, the toggle stays at x318 on mobile and x1832 on desktop, to the right of Abena. The CTA passes the hit-test, opens wa.me and then api.whatsapp.com in a new tab, and the panel closes after the CTA click and via the toggle. (4) Abena has a 2px white ring (box-shadow). The chat window [15,228,374,748] is inside the viewport, gives a real AI reply about processing times, and closes. (5) The visa-sample-note text matches the requested sentence exactly. (6) Desktop 1920x800: Abena [1768-1824] and WhatsApp [1832-1896] do not overlap and their bottoms line up at 776. Footer padding-bottom is 24px (pb-6), so the look is unchanged.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Optional: the Abena window and the WhatsApp panel can still be open at the same time and would overlap on mobile; consider closing one when the other opens."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A", "frontend": "100%"},
+  "seed_data_creation": "None. No applications submitted. One Abena chat message sent.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Dismiss the cookie banner by setting localStorage egv_cookie_consent_v1. Test ids: abena-open, abena-window, abena-input, abena-send, whatsapp-floating-button, whatsapp-widget-panel, whatsapp-widget-cta, footer-disclaimer-text, visa-sample-note. The footer's last div is pb-24 md:pb-6."
+}
