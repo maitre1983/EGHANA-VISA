@@ -25,7 +25,7 @@ BASE_URL = BASE_URL.rstrip("/")
 
 ADMIN_EMAIL = "admin@eghanavisa.com"
 ADMIN_PASSWORD = "Admin@2026New!"
-ARBITRARY_EMAIL = "liportalmerchand@gmail.com"
+ARBITRARY_EMAIL = "ops-test-recipient@example.com"
 
 
 @pytest.fixture(scope="module")

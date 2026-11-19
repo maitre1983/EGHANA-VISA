@@ -9,7 +9,7 @@ Covers:
 Notes:
 - We restrict real Resend delivery to at most 1 call to contact@eghanavisa.com
   (the account-owner address). All other cases use the restricted external
-  address (liportalmerchand@gmail.com) which Resend will reject; the service
+  address (ops-test-recipient@example.com) which Resend will reject; the service
   must degrade to simulated=True.
 - Skips gracefully if RESEND_API_KEY is missing.
 """
@@ -30,7 +30,7 @@ BASE_URL = BASE_URL.rstrip("/")
 ADMIN_EMAIL = "admin@eghanavisa.com"
 ADMIN_PASSWORD = "Admin@2026New!"
 OWNER_EMAIL = "contact@eghanavisa.com"        # only allowed recipient in test mode
-RESTRICTED_EMAIL = "liportalmerchand@gmail.com"  # Resend will reject
+RESTRICTED_EMAIL = "ops-test-recipient@example.com"  # Resend will reject
 
 
 # ---------- Fixtures ----------
