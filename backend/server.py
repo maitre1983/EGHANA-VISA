@@ -8,6 +8,7 @@ import logging
 import uuid
 import json
 import random
+import re
 from pathlib import Path
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, List
@@ -838,10 +839,39 @@ async def admin_kpis(ctx: dict = Depends(require_admin)):
 
 
 @api.get("/admin/applications")
-async def admin_applications(status: str = Query("all"), ctx: dict = Depends(require_admin)):
-    q = {"payment_status": "paid"}
+async def admin_applications(
+    status: str = Query("all"),
+    search: str = Query("", description="Case-insensitive match on tracking_no, full_name or email"),
+    from_date: str = Query("", description="Inclusive lower bound on created_at (ISO date YYYY-MM-DD, interpreted as UTC midnight)"),
+    to_date: str = Query("", description="Inclusive upper bound on created_at (ISO date YYYY-MM-DD, interpreted as UTC end-of-day)"),
+    ctx: dict = Depends(require_admin),
+):
+    """List applications. All new filters are optional and additive — existing
+    callers (no params) see the exact same payload as before."""
+    q: dict = {"payment_status": "paid"}
     if status in ("submitted", "in_progress", "done"):
         q["status"] = status
+
+    # --- Search (case-insensitive across identifying fields) ---
+    s = (search or "").strip()
+    if s:
+        # Escape regex metacharacters so operators can paste real email/tracking.
+        safe = re.escape(s)
+        q["$or"] = [
+            {"tracking_no": {"$regex": safe, "$options": "i"}},
+            {"full_name": {"$regex": safe, "$options": "i"}},
+            {"email": {"$regex": safe, "$options": "i"}},
+        ]
+
+    # --- Period filter on created_at (stored as ISO-8601 UTC strings) ---
+    created_filter: dict = {}
+    if from_date:
+        created_filter["$gte"] = f"{from_date.strip()}T00:00:00+00:00"
+    if to_date:
+        created_filter["$lte"] = f"{to_date.strip()}T23:59:59.999999+00:00"
+    if created_filter:
+        q["created_at"] = created_filter
+
     docs = await db.applications.find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return docs
 

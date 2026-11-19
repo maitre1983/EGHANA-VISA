@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import api from "../lib/api";
-import { Eye, Play, CheckCircle2, X, RefreshCw } from "lucide-react";
+import { Eye, Play, CheckCircle2, X, RefreshCw, Search, Calendar, ArrowUpDown } from "lucide-react";
 import { toast } from "sonner";
 
 const FILTERS = [
@@ -10,22 +10,62 @@ const FILTERS = [
     { key: "done", label: "Done" },
 ];
 
+// Ghana sits on GMT+0 year-round (no DST), so UTC = GMT. Format as
+// "19 Nov 2026 — 14:35 GMT" using a locale-stable formatter to avoid
+// SSR/client drift and avoid pulling in moment/dayjs.
+const _FMT_DATE = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
+const _FMT_TIME = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" });
+export function formatSubmittedAt(iso) {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "—";
+    return `${_FMT_DATE.format(d)} — ${_FMT_TIME.format(d)} GMT`;
+}
+
 export default function AdminDashboard() {
     const [kpi, setKpi] = useState(null);
     const [apps, setApps] = useState([]);
     const [filter, setFilter] = useState("all");
     const [selected, setSelected] = useState(null);
     const [loading, setLoading] = useState(false);
+    const [search, setSearch] = useState("");
+    const [fromDate, setFromDate] = useState("");
+    const [toDate, setToDate] = useState("");
+    const [sortAsc, setSortAsc] = useState(false); // false = newest first (DB default)
 
     const load = async () => {
         setLoading(true);
         try {
-            const [k, a] = await Promise.all([api.get("/admin/kpis"), api.get("/admin/applications", { params: { status: filter } })]);
+            const [k, a] = await Promise.all([
+                api.get("/admin/kpis"),
+                api.get("/admin/applications", {
+                    params: {
+                        status: filter,
+                        search: search.trim() || undefined,
+                        from_date: fromDate || undefined,
+                        to_date: toDate || undefined,
+                    },
+                }),
+            ]);
             setKpi(k.data); setApps(a.data);
         } finally { setLoading(false); }
     };
 
     useEffect(() => { load(); /* eslint-disable-next-line */ }, [filter]);
+
+    // Debounced search/date — local only, no new network until typing stops.
+    useEffect(() => {
+        const t = setTimeout(() => { load(); }, 350);
+        return () => clearTimeout(t);
+        // eslint-disable-next-line
+    }, [search, fromDate, toDate]);
+
+    const displayed = useMemo(() => {
+        // Backend already returns newest-first. Reverse locally only when user asks oldest-first.
+        return sortAsc ? [...apps].reverse() : apps;
+    }, [apps, sortAsc]);
+
+    const resetFilters = () => { setSearch(""); setFromDate(""); setToDate(""); };
 
     const setStatus = async (tracking, status) => {
         try {
@@ -79,6 +119,46 @@ export default function AdminDashboard() {
                 ))}
             </div>
 
+            {/* Search + date range toolbar */}
+            <div className="mt-4 bg-white rounded-xl border border-black/10 p-3 flex flex-col md:flex-row gap-3 md:items-center">
+                <div className="relative flex-1 min-w-[220px]">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        placeholder="Search by name, email or tracking number…"
+                        data-testid="dashboard-search"
+                        className="w-full pl-9 pr-3 py-2 border border-black/10 rounded-md text-sm focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none"
+                    />
+                </div>
+                <div className="flex gap-2 items-center text-sm">
+                    <Calendar size={14} className="text-slate-400" />
+                    <input
+                        type="date"
+                        value={fromDate}
+                        onChange={(e) => setFromDate(e.target.value)}
+                        data-testid="dashboard-from-date"
+                        aria-label="From date"
+                        className="px-2 py-2 border border-black/10 rounded-md focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none"
+                    />
+                    <span className="text-slate-400">→</span>
+                    <input
+                        type="date"
+                        value={toDate}
+                        onChange={(e) => setToDate(e.target.value)}
+                        data-testid="dashboard-to-date"
+                        aria-label="To date"
+                        className="px-2 py-2 border border-black/10 rounded-md focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none"
+                    />
+                </div>
+                {(search || fromDate || toDate) && (
+                    <button onClick={resetFilters} data-testid="dashboard-reset-filters" className="text-xs text-slate-500 hover:text-ghana-red underline underline-offset-2">Reset</button>
+                )}
+                <div className="text-xs text-slate-500 md:ml-auto whitespace-nowrap" data-testid="dashboard-result-count">
+                    {loading ? "Loading…" : `${displayed.length} result${displayed.length === 1 ? "" : "s"}`}
+                </div>
+            </div>
+
             {/* Table */}
             <div className="mt-4 bg-white rounded-xl border border-black/10 overflow-hidden">
                 <div className="overflow-x-auto">
@@ -86,6 +166,16 @@ export default function AdminDashboard() {
                         <thead className="bg-slate-50 text-left text-xs uppercase tracking-widest text-slate-500">
                             <tr>
                                 <th className="px-4 py-3 font-semibold">Tracking</th>
+                                <th className="px-4 py-3 font-semibold">
+                                    <button
+                                        onClick={() => setSortAsc((v) => !v)}
+                                        data-testid="dashboard-sort-submitted"
+                                        className="inline-flex items-center gap-1 uppercase tracking-widest text-xs font-semibold hover:text-ghana-green"
+                                        title={sortAsc ? "Sort newest first" : "Sort oldest first"}
+                                    >
+                                        Submitted At <ArrowUpDown size={11} />
+                                    </button>
+                                </th>
                                 <th className="px-4 py-3 font-semibold">Name</th>
                                 <th className="px-4 py-3 font-semibold">Passport</th>
                                 <th className="px-4 py-3 font-semibold">Email</th>
@@ -98,9 +188,12 @@ export default function AdminDashboard() {
                             </tr>
                         </thead>
                         <tbody>
-                            {apps.map((a) => (
+                            {displayed.map((a) => (
                                 <tr key={a.tracking_no} className="border-t border-black/5" data-testid={`row-${a.tracking_no}`}>
                                     <td className="px-4 py-3 font-mono">{a.tracking_no}</td>
+                                    <td className="px-4 py-3 whitespace-nowrap text-slate-600" data-testid={`submitted-at-${a.tracking_no}`}>
+                                        {formatSubmittedAt(a.submitted_at || a.created_at)}
+                                    </td>
                                     <td className="px-4 py-3">{a.full_name}</td>
                                     <td className="px-4 py-3">{a.passport_number}</td>
                                     <td className="px-4 py-3 truncate max-w-[180px]">{a.email}</td>
@@ -126,8 +219,8 @@ export default function AdminDashboard() {
                                     </td>
                                 </tr>
                             ))}
-                            {apps.length === 0 && (
-                                <tr><td colSpan="10" className="text-center py-12 text-slate-500 text-sm">{loading ? "Loading…" : "No applications yet."}</td></tr>
+                            {displayed.length === 0 && (
+                                <tr><td colSpan="11" className="text-center py-12 text-slate-500 text-sm">{loading ? "Loading…" : (search || fromDate || toDate) ? "No applications match these filters." : "No applications yet."}</td></tr>
                             )}
                         </tbody>
                     </table>
@@ -146,6 +239,7 @@ export default function AdminDashboard() {
                             <button onClick={() => setSelected(null)} data-testid="detail-close" className="p-2 rounded hover:bg-slate-100"><X size={18} /></button>
                         </div>
                         <div className="p-6 grid md:grid-cols-2 gap-4 text-sm">
+                            <KV k="Submitted at" v={formatSubmittedAt(selected.submitted_at || selected.created_at)} />
                             <KV k="Name" v={selected.full_name} />
                             <KV k="Email" v={selected.email} />
                             <KV k="Phone" v={selected.phone} />
