@@ -440,6 +440,12 @@ async def create_application(payload: ApplicationIn):
         "payment_transaction_id": None,
         "documents": {},
         "created_at": now_iso(),
+        # submitted_at marks the moment the applicant definitively sent the
+        # form. In the current flow there is no draft stage — every POST is a
+        # final submission — so it equals created_at. Kept as a distinct field
+        # so legacy records (which lack it) remain visually distinguishable
+        # from records with a confirmed submission timestamp.
+        "submitted_at": now_iso(),
         "updated_at": now_iso(),
     }
     await db.applications.insert_one(dict(doc))
@@ -863,16 +869,28 @@ async def admin_applications(
             {"email": {"$regex": safe, "$options": "i"}},
         ]
 
-    # --- Period filter on created_at (stored as ISO-8601 UTC strings) ---
-    created_filter: dict = {}
-    if from_date:
-        created_filter["$gte"] = f"{from_date.strip()}T00:00:00+00:00"
-    if to_date:
-        created_filter["$lte"] = f"{to_date.strip()}T23:59:59.999999+00:00"
-    if created_filter:
-        q["created_at"] = created_filter
+    # --- Period filter — uses submitted_at when present, falls back to
+    # created_at for legacy records, so the filter targets exactly the field
+    # the Dashboard column displays. ---
+    if from_date or to_date:
+        bounds = []
+        effective = {"$ifNull": ["$submitted_at", "$created_at"]}
+        if from_date:
+            bounds.append({"$gte": [effective, f"{from_date.strip()}T00:00:00+00:00"]})
+        if to_date:
+            bounds.append({"$lte": [effective, f"{to_date.strip()}T23:59:59.999999+00:00"]})
+        q["$expr"] = {"$and": bounds} if len(bounds) > 1 else bounds[0]
 
-    docs = await db.applications.find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    # Sort is always by the effective submission time (desc). We use a Mongo
+    # aggregation pipeline so legacy records sort with the same key the UI shows.
+    pipeline = [
+        {"$match": q},
+        {"$addFields": {"_effective_at": {"$ifNull": ["$submitted_at", "$created_at"]}}},
+        {"$sort": {"_effective_at": -1}},
+        {"$project": {"_id": 0, "_effective_at": 0}},
+        {"$limit": 1000},
+    ]
+    docs = await db.applications.aggregate(pipeline).to_list(1000)
     return docs
 
 

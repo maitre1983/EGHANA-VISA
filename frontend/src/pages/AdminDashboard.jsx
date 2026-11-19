@@ -15,11 +15,19 @@ const FILTERS = [
 // SSR/client drift and avoid pulling in moment/dayjs.
 const _FMT_DATE = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
 const _FMT_TIME = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" });
-export function formatSubmittedAt(iso) {
-    if (!iso) return "—";
+function _fmt(iso) {
     const d = new Date(iso);
     if (isNaN(d.getTime())) return "—";
     return `${_FMT_DATE.format(d)} — ${_FMT_TIME.format(d)} GMT`;
+}
+// Returns { text, fallback }. `fallback` is true for legacy records where
+// no definitive submitted_at exists — we show the creation date but flag it
+// as unconfirmed so it is never presented as a definitive submission.
+export function submittedAtDisplay(app) {
+    if (!app) return { text: "—", fallback: false };
+    if (app.submitted_at) return { text: _fmt(app.submitted_at), fallback: false };
+    if (app.created_at) return { text: _fmt(app.created_at), fallback: true };
+    return { text: "—", fallback: false };
 }
 
 export default function AdminDashboard() {
@@ -192,7 +200,21 @@ export default function AdminDashboard() {
                                 <tr key={a.tracking_no} className="border-t border-black/5" data-testid={`row-${a.tracking_no}`}>
                                     <td className="px-4 py-3 font-mono">{a.tracking_no}</td>
                                     <td className="px-4 py-3 whitespace-nowrap text-slate-600" data-testid={`submitted-at-${a.tracking_no}`}>
-                                        {formatSubmittedAt(a.submitted_at || a.created_at)}
+                                        {(() => {
+                                            const d = submittedAtDisplay(a);
+                                            return (
+                                                <span className="inline-flex items-center gap-2">
+                                                    <span className={d.fallback ? "text-slate-500" : ""}>{d.text}</span>
+                                                    {d.fallback && (
+                                                        <span
+                                                            title="Legacy record — created date shown because no definitive submission timestamp was captured"
+                                                            className="text-[9px] uppercase tracking-widest font-semibold text-slate-400 italic border border-slate-200 rounded px-1.5 py-0.5"
+                                                            data-testid={`submitted-at-fallback-${a.tracking_no}`}
+                                                        >created</span>
+                                                    )}
+                                                </span>
+                                            );
+                                        })()}
                                     </td>
                                     <td className="px-4 py-3">{a.full_name}</td>
                                     <td className="px-4 py-3">{a.passport_number}</td>
@@ -239,7 +261,15 @@ export default function AdminDashboard() {
                             <button onClick={() => setSelected(null)} data-testid="detail-close" className="p-2 rounded hover:bg-slate-100"><X size={18} /></button>
                         </div>
                         <div className="p-6 grid md:grid-cols-2 gap-4 text-sm">
-                            <KV k="Submitted at" v={formatSubmittedAt(selected.submitted_at || selected.created_at)} />
+                            {(() => {
+                                const d = submittedAtDisplay(selected);
+                                return (
+                                    <KV
+                                        k={d.fallback ? "Created at (no definitive submission timestamp)" : "Submitted at"}
+                                        v={d.text}
+                                    />
+                                );
+                            })()}
                             <KV k="Name" v={selected.full_name} />
                             <KV k="Email" v={selected.email} />
                             <KV k="Phone" v={selected.phone} />
