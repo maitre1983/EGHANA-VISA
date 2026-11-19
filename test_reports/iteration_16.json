@@ -1,0 +1,40 @@
+{
+  "summary": "Retest of the iteration_15 fixes (backend + frontend, desktop 1920x1080 and mobile 390x844). New suite tests/test_iteration16_hubtel_verification.py, run serially with -n 0: 8 of 9 pass. FIX 1 (CRITICAL) is VERIFIED: in LIVE mode (sandbox=false, fake creds set directly in Mongo) a forged success callback returns 200 but the app stays payment_status=pending, and payment_verification.state becomes 'error' (Hubtel status API returned 403 the first time and 401 the second, because preview IP and fake creds). /payments/confirm returns 403 in live mode. GET /api/admin/payment-verifications lists the app with no _id. POST /verify-payment returns state=error with attempts=2 and 404 for an unknown tracking number. A forged Failed callback in live mode does not mark the app paid either. FIX 2 is VERIFIED: in sandbox, Failed and Cancelled callbacks do not downgrade a paid app, and track still returns 200. A Failed callback on a pending app still sets it to failed. Sandbox regression passes: initiate + confirm marks the app paid, the 'submitted' and 'admin_payment_success' emails are logged, and a sandbox success callback marks the app paid. verify-payment returns 400 in sandbox, and both verification endpoints need auth. FIX 6 is VERIFIED: after a backend restart there are still 13 templates and the edited subject is kept (then restored). FIX 3 is VERIFIED in the UI: search, from/to dates, reset, Submitted At column, sort toggle, pagination buttons (disabled at 3 rows). API pagination with page_size=1 checked; page=0 returns 422. FIX 4 is VERIFIED: on mobile the Abena button (y612-668) and WhatsApp button (y692-748) do not overlap, both are clickable (hit-test confirmed), the Abena window is fully in the viewport (y84-604) and chat answers. FIX 5 is VERIFIED: admin-mobile-nav is visible on mobile and the desktop sidebar is hidden; all 8 links go to the right page with no horizontal overflow; admin-mobile-logout works. Monitoring UI: pending-verifications shows the test app with an 'error' badge, and the verify-payment button calls the API (attempts went up). Light regression: iter15 suite 13 pass / 1 skip (crypto live keys), iter14 non-ticket/non-SMS tests 4/4, and public pages load. Settings.hubtel restored exactly (sandbox=true, empty creds). SMS still disabled. All TEST_ apps deleted (0 left).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/payments/confirm (sandbox only)", "issue": "success=false on an already-paid app still sets payment_status='failed'. The paid guard was added only to the webhook. In live mode this endpoint returns 403, so production is not affected. Reproduced in test_confirm_false_does_not_downgrade_paid."},
+      {"endpoint": "_mark_application_paid", "issue": "Still check-then-update and not atomic. A live callback task, the /payments/status nudge and the cron reconcile can call _verify_hubtel_payment at the same time and send the submitted/admin emails twice. Use update_one({tracking_no, payment_status:{$ne:'paid'}}) and send emails only if modified_count==1."},
+      {"endpoint": "GET /api/admin/payment-verifications", "issue": "Rows with state 'error' stay listed after Hubtel is switched back to sandbox, but verify-payment then returns 400. This is cosmetic: an admin cannot clear them."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "WhatsAppButton + AbenaChat (mobile)", "issue": "When the WhatsApp panel is open on mobile, the Abena button (z-50, x318-374 y612-668) covers the right end of the 'Start chat on WhatsApp' CTA (panel y398-680). The CTA centre is still clickable. Hide Abena while the WhatsApp panel is open, or raise the panel.", "selector": "[data-testid=whatsapp-widget-cta]", "priority": "LOW"},
+      {"component": "Router", "issue": "No catch-all 404 route, so unknown URLs such as /contact show a blank page with the layout only.", "selector": "App.js Routes", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Admin Dashboard", "issues": ["From/to dates use the browser's native <input type=date> instead of the shadcn Calendar/Popover.", "The Submitted At sort only reverses the current page (client side), not the whole dataset; it is fine while there are fewer than 100 rows.", "On mobile 390px the to-date input touches the right edge of the filter card."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iteration16_hubtel_verification.py", "/app/backend/tests/ui_setup_iter16.py", "/app/test_reports/pytest/pytest_iter16.xml"],
+  "action_items": [
+    "Add the paid guard to /api/payments/confirm success=false (sandbox), the same one used in the webhook",
+    "Make _mark_application_paid atomic (conditional update filter + modified_count check) to avoid duplicate emails when verification runs at the same time",
+    "Optional: hide the Abena button while the WhatsApp panel is open on mobile; add a NotFound route; swap the native date inputs on the dashboard for the shadcn Calendar"
+  ],
+  "critical_code_review_comments": [
+    "hubtel_webhook live branch is correct: the callback only triggers _verify_hubtel_payment, and an app is marked paid only when status=='paid', clientReference matches and amount >= amount_charged.",
+    "payment_status (public) triggers verification at most once every 20 seconds per app; fine, but it is a public endpoint that can make outbound calls to Hubtel. Consider a global rate limit.",
+    "_reconcile_pending_hubtel filters updated_at >= 48h, but _verify_hubtel_payment does not update updated_at, so old rows age out correctly. OK.",
+    "server.py is about 2900 lines; split it into routers (payments, admin, analytics)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration16_hubtel_verification.py", "/app/backend/tests/ui_setup_iter16.py"],
+  "success_rate": {"backend": "89% (8/9 new; 17/17 regression run)", "frontend": "100% of requested fixes verified; 2 low-priority UI issues"},
+  "test_credentials": "admin@eghanavisa.com / Admin@2026 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Only temporary TEST_Iter16 applications, all deleted by tracking number. settings.hubtel was temporarily set to live with fake creds twice and restored exactly each time. One email template subject was edited for the FIX 6 test and restored.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run test_iteration16_hubtel_verification.py with -n 0 (it flips settings.hubtel to live for about 40 seconds and restores it in a finally block). ui_setup_iter16.py has helpers: paid | pending_live | restore | delete <trk>. After pending_live, always run restore. iter14 tests need REACT_APP_BACKEND_URL exported. Sandbox forged success callback still marks paid BY DESIGN, so the iter15 test_unsigned_success_callback_marks_paid fails in sandbox and should be ignored."
+}

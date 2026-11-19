@@ -144,7 +144,7 @@ export default function AdminDashboard() {
                         className="w-full pl-9 pr-3 py-2 border border-black/10 rounded-md text-sm focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none"
                     />
                 </div>
-                <div className="flex gap-2 items-center text-sm">
+                <div className="flex flex-wrap gap-2 items-center text-sm">
                     <Calendar size={14} className="text-slate-400" />
                     <input
                         type="date"

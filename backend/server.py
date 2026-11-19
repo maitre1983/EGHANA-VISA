@@ -781,8 +781,8 @@ async def _mark_application_paid(app_doc: dict, payment_method: str) -> bool:
     Returns True if this call flipped the state; False if it was already paid."""
     if app_doc.get("payment_status") == "paid":
         return False
-    await db.applications.update_one(
-        {"tracking_no": app_doc["tracking_no"]},
+    res = await db.applications.update_one(
+        {"tracking_no": app_doc["tracking_no"], "payment_status": {"$ne": "paid"}},
         {"$set": {
             "payment_status": "paid",
             "status": "submitted",
@@ -791,6 +791,8 @@ async def _mark_application_paid(app_doc: dict, payment_method: str) -> bool:
             "updated_at": now_iso(),
         }},
     )
+    if res.modified_count != 1:
+        return False
     processing_label = "Express (48–72h)" if app_doc["processing"] == "express" else "Regular (5–7 days)"
     await email_svc.send(
         recipient=app_doc["email"],
@@ -835,7 +837,7 @@ async def payment_confirm(payload: PayConfirm):
 
     if not payload.success:
         await db.applications.update_one(
-            {"tracking_no": payload.tracking_no},
+            {"tracking_no": payload.tracking_no, "payment_status": {"$ne": "paid"}},
             {"$set": {"payment_status": "failed", "updated_at": now_iso()}},
         )
         return {"ok": False}

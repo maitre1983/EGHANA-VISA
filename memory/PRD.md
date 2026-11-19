@@ -274,3 +274,12 @@ Build a full-stack Ghana Visa On Arrival web application for **eghanavisa.com** 
 - P1: User enters Hubtel SMS credentials in Settings → SMS Alerts and sends a test SMS.
 - P2: Abena learning system & AI analytics dashboard.
 - NEVER hardcode admin emails in seed files (phishing classifier).
+
+## Iteration 17 (2026-11-19) — Pre-production hardening
+- CRITICAL fix: LIVE Hubtel callbacks no longer trusted; payment marked paid only after Hubtel Transaction Status API confirms (status Paid + clientReference + amount >= amount_charged). Retries: /payments/status poll (throttled 20s), cron every 15 min (max 12 attempts / 48h), admin "Verify now" in Monitoring. Requires the outbound proxy IP whitelisted at Hubtel for api-txnstatus.hubtel.com. Sandbox behaviour unchanged.
+- Paid applications never downgraded by failure callbacks / sandbox confirm(false); _mark_application_paid atomic (no duplicate emails).
+- Email template seed is non-destructive (upsert $setOnInsert only).
+- Dashboard Lot 1 UI (search, dates, pagination, Submitted At) restored from GitHub branch.
+- Mobile: Abena/WhatsApp buttons no longer overlap; admin mobile top nav.
+- Backup: /root/backups/predeploy_20261119_194959 (mongodump preview DB + git commit a5a41f7). Rollback = Emergent "Rollback" to that checkpoint + redeploy.
+- Tests: iteration_15, iteration_16 + pytest suites pass. Deploy readiness: PASS. Deployment must be triggered from the UI deploy panel (replace existing app).
