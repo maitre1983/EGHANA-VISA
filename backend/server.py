@@ -108,9 +108,12 @@ def now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
-async def _notify_admin(template_name: str, context: dict) -> None:
-    """Fire-and-forget internal ops email. Never breaks the caller if email fails.
-    Fans out to the primary admin_notification_email + any additional_admin_emails."""
+async def _notify_admin(template_name: str, context: dict) -> tuple[int, int]:
+    """Fire-and-forget internal ops email. Never raises on the caller path.
+    Fans out to the primary admin_notification_email + any additional_admin_emails.
+    Returns (sent_count, failed_count) so wrappers can decide whether to log
+    the dispatch as delivered or as needing retry."""
+    sent, failed = 0, 0
     try:
         s = await get_settings()
         recipients: list[str] = []
@@ -122,7 +125,7 @@ async def _notify_admin(template_name: str, context: dict) -> None:
             if e and e not in recipients:
                 recipients.append(e)
         if not recipients:
-            return
+            return (0, 0)
         # Inject a back-office link so admins can jump straight to the record.
         tracking = context.get("tracking", "")
         base_url = (s.get("admin_backoffice_url") or "").strip().rstrip("/")
@@ -140,21 +143,27 @@ async def _notify_admin(template_name: str, context: dict) -> None:
                     lang="en",
                     context=ctx,
                 )
+                sent += 1
             except Exception as inner:
+                failed += 1
                 logger.warning(f"Admin notification failed for {rcpt} ({template_name}): {inner}")
     except Exception as e:
         logger.warning(f"Admin notification failed ({template_name}): {e}")
+    return (sent, failed)
 
 
 async def _notify_payment_event(event: str, *, tracking: str | None, reference: str | None, context: dict) -> bool:
     """Idempotent payment-lifecycle alert for admins.
 
     event ∈ {"failed", "expired", "refunded"}. Dedupe key is
-    (event, tracking or reference) — if we have already fired this event
-    for this payment we return False and send nothing. Never raises.
+    (event, tracking or reference).
 
-    Only call when the provider has delivered a CONFIRMED event via an
-    authenticated callback — never on a merely-initiated or guessed status.
+    Status model in `payment_notifications_log`:
+      • status="sent"      → notification confirmed delivered to Resend. Replay is a no-op.
+      • status="failed"    → send attempt raised. Replay is ALLOWED so admins can retry.
+      • status="pending"   → transient in-flight state (should never be observed for long).
+
+    Returns True when the event was actually dispatched this call.
     """
     template_map = {
         "failed":   "admin_payment_failed",
@@ -164,24 +173,70 @@ async def _notify_payment_event(event: str, *, tracking: str | None, reference: 
     tpl = template_map.get(event)
     if not tpl:
         return False
-    # Idempotency guard — unique key per (event, reference|tracking).
     key = f"{event}:{reference or tracking or 'unknown'}"
+    # Lookup existing log entry — only block when it is already "sent".
+    existing = None
     try:
         existing = await db.payment_notifications_log.find_one({"key": key}, {"_id": 0})
-        if existing:
-            logger.info(f"payment_event[{event}] already notified for {key} - skipping")
-            return False
-        await db.payment_notifications_log.insert_one({
-            "key": key,
-            "event": event,
-            "tracking": tracking,
-            "reference": reference,
-            "created_at": now_iso(),
-        })
+    except Exception as e:
+        logger.warning(f"payment_notifications_log read failed for {key}: {e}")
+    if existing and existing.get("status") == "sent":
+        logger.info(f"payment_event[{event}] already sent for {key} - skipping")
+        return False
+    # Record / update as pending, then try to send.
+    try:
+        await db.payment_notifications_log.update_one(
+            {"key": key},
+            {"$set": {
+                "key": key,
+                "event": event,
+                "tracking": tracking,
+                "reference": reference,
+                "status": "pending",
+                "updated_at": now_iso(),
+            }, "$setOnInsert": {"created_at": now_iso()},
+             "$inc": {"attempts": 1}},
+            upsert=True,
+        )
     except Exception as e:
         logger.warning(f"payment_notifications_log write failed for {key}: {e}")
-    await _notify_admin(tpl, context)
-    return True
+    try:
+        sent, failed = await _notify_admin(tpl, context)
+        if sent > 0:
+            await db.payment_notifications_log.update_one(
+                {"key": key},
+                {"$set": {
+                    "status": "sent",
+                    "sent_at": now_iso(),
+                    "sent_count": sent,
+                    "failed_count": failed,
+                    "last_error": None,
+                }},
+            )
+            return True
+        # Nothing got through — mark failed so a future webhook retry can try again.
+        await db.payment_notifications_log.update_one(
+            {"key": key},
+            {"$set": {
+                "status": "failed",
+                "last_error": f"all {failed} recipients failed",
+                "failed_at": now_iso(),
+                "sent_count": sent,
+                "failed_count": failed,
+            }},
+        )
+        return False
+    except Exception as e:
+        err_text = str(e)[:500]
+        logger.warning(f"payment_event[{event}] send failed for {key}: {err_text}")
+        try:
+            await db.payment_notifications_log.update_one(
+                {"key": key},
+                {"$set": {"status": "failed", "last_error": err_text, "failed_at": now_iso()}},
+            )
+        except Exception:
+            pass
+        return False
 
 
 
@@ -347,6 +402,48 @@ async def startup() -> None:
     await _seed_default_admin()
     await _seed_or_migrate_settings()
     await _seed_email_templates_if_needed()
+    await _ensure_indexes()
+
+
+async def _ensure_indexes() -> None:
+    """Create query-optimising indexes on hot collections.
+
+    create_index is idempotent — reruns cost nothing when the index already
+    exists. Indexes chosen from the actual query patterns in this file:
+      • applications: lookups by tracking_no (very hot), lists filtered by
+        payment_status + status with sort on created_at, search on email.
+      • *_log / callbacks: time-ordered reads + key-based dedupe lookups.
+      • analytics_events: event × time range aggregations.
+    """
+    try:
+        # applications — primary hot collection
+        await db.applications.create_index("tracking_no", unique=False, name="tracking_no_1")
+        await db.applications.create_index("email", name="email_1")
+        await db.applications.create_index([("payment_status", 1), ("status", 1), ("created_at", -1)], name="pay_status_created_1")
+        await db.applications.create_index("created_at", name="created_at_desc_1")
+        await db.applications.create_index("submitted_at", name="submitted_at_1", sparse=True)
+
+        # Payment event collections — dedupe lookups by provider reference / key
+        await db.hubtel_callbacks.create_index("client_reference", name="client_reference_1")
+        await db.hubtel_callbacks.create_index("checkout_id", name="checkout_id_1")
+        await db.hubtel_callbacks.create_index("created_at", name="created_at_desc_1")
+        await db.crypto_payments.create_index("payment_id", name="payment_id_1")
+        await db.crypto_payments.create_index("tracking_no", name="tracking_no_1")
+        await db.crypto_payments.create_index("created_at", name="created_at_desc_1")
+
+        # payment_notifications_log — idempotency key is the primary lookup
+        await db.payment_notifications_log.create_index("key", unique=True, name="key_unique_1")
+
+        # Audit logs + analytics — chronological reads
+        await db.email_log.create_index("created_at", name="created_at_desc_1")
+        await db.analytics_events.create_index([("event", 1), ("created_at", -1)], name="event_time_1")
+        await db.analytics_events.create_index("path", name="path_1")
+
+        # Settings / admins
+        await db.admins.create_index("email", unique=True, name="email_unique_1")
+        logger.info("Mongo indexes ensured.")
+    except Exception as e:
+        logger.warning(f"Index creation issue (non-fatal): {e}")
 
 
 # ────────────────────────── HELPERS ──────────────────────────
@@ -906,10 +1003,13 @@ async def admin_applications(
     search: str = Query("", description="Case-insensitive match on tracking_no, full_name or email"),
     from_date: str = Query("", description="Inclusive lower bound on created_at (ISO date YYYY-MM-DD, interpreted as UTC midnight)"),
     to_date: str = Query("", description="Inclusive upper bound on created_at (ISO date YYYY-MM-DD, interpreted as UTC end-of-day)"),
+    page: int = Query(1, ge=1, description="1-indexed page number"),
+    page_size: int = Query(100, ge=1, le=1000, description="Items per page (capped at 1000)"),
     ctx: dict = Depends(require_admin),
 ):
     """List applications. All new filters are optional and additive — existing
-    callers (no params) see the exact same payload as before."""
+    callers (no params) see the exact same payload shape as before, just now
+    capped at page_size items (default 100 instead of the old blind 1000)."""
     q: dict = {"payment_status": "paid"}
     if status in ("submitted", "in_progress", "done"):
         q["status"] = status
@@ -939,14 +1039,16 @@ async def admin_applications(
 
     # Sort is always by the effective submission time (desc). We use a Mongo
     # aggregation pipeline so legacy records sort with the same key the UI shows.
+    skip = (page - 1) * page_size
     pipeline = [
         {"$match": q},
         {"$addFields": {"_effective_at": {"$ifNull": ["$submitted_at", "$created_at"]}}},
         {"$sort": {"_effective_at": -1}},
+        {"$skip": skip},
+        {"$limit": page_size},
         {"$project": {"_id": 0, "_effective_at": 0}},
-        {"$limit": 1000},
     ]
-    docs = await db.applications.aggregate(pipeline).to_list(1000)
+    docs = await db.applications.aggregate(pipeline).to_list(page_size)
     return docs
 
 
