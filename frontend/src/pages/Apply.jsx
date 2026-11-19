@@ -112,7 +112,7 @@ export default function Apply() {
     };
 
     return (
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-12 pb-28 md:pb-12">
             <div className="mb-8">
                 <div className="text-xs uppercase tracking-[0.25em] text-ghana-green font-semibold">Application</div>
                 <h1 className="mt-2 text-3xl md:text-4xl font-heading font-bold">Ghana eVisa &amp; ETA Application</h1>
@@ -328,7 +328,7 @@ export default function Apply() {
                         />
                         <div className="text-xs text-slate-500 flex items-start gap-2">
                             <FileText size={14} className="mt-0.5" />
-                            <span>This is a sample preview. Personal data appears blurred until your visa is issued.</span>
+                            <span data-testid="visa-sample-note">This is an illustrative visa preview only. eGhanaVisa assists travelers with submitting visa applications to the competent Ghanaian authorities. All visa approvals and issuances are determined exclusively by those authorities.</span>
                         </div>
                     </div>
                 </div>
