@@ -260,3 +260,17 @@ Build a full-stack Ghana Visa On Arrival web application for **eghanavisa.com** 
     - KPI `revenue_usd=$700` unchanged (2 Hubtel sandbox payments reconciled).
     - 3 new email templates seeded (`admin_payment_failed/expired/refunded`).
     - HEAD request on `/api/config` returns 200 (Cloudflare fix preserved).
+
+## Iteration 16 (2026-11-19) — Admin ops pack (SMS, Monitoring, Activity, Tickets)
+- Hubtel SMS admin alerts (`sms_service.py`): config in Admin → Settings → SMS Alerts (Client ID/Secret/Sender ID/numbers, per-event toggles: new submission, payment success, Abena escalation). Secret redacted in GET settings. Log in `sms_log`. Fire-and-forget (never blocks).
+- Payment Monitoring (`health_service.py`, /admin/monitoring): probes Hubtel checkout + NowPayments /status (+ Hubtel SMS when on); history in `gateway_health`; email (template `admin_gateway_down`) + SMS on state change. Platform cron `.emergent/crons.yml` every 15 min → POST /api/cron/gateway-health (bearer WEBHOOK_CRON_SECRET, idempotent via `cron_runs`).
+- Activity Log (`audit_service.py` ASGI middleware, /admin/activity): records every admin POST/PUT/DELETE + exports + document views, secrets masked, in `admin_audit_log`.
+- Abena Tickets UI (/admin/tickets): list/filter, chat history, reply by email (new template `support_reply`), resolve/reopen.
+- New email templates are added on startup without overwriting admin-edited ones.
+- Payments page added to admin sidebar.
+- Tested: iteration_14 (13/13 backend, frontend all flows pass). Real SMS untested — needs user's Hubtel SMS credentials.
+
+## Remaining backlog
+- P1: User enters Hubtel SMS credentials in Settings → SMS Alerts and sends a test SMS.
+- P2: Abena learning system & AI analytics dashboard.
+- NEVER hardcode admin emails in seed files (phishing classifier).
