@@ -73,7 +73,7 @@ export default function Footer() {
                     </div>
                 </div>
             </div>
-            <div className="border-t border-white/10 py-6 text-center text-xs text-white/50">
+            <div className="border-t border-white/10 pt-6 pb-24 md:pb-6 text-center text-xs text-white/50">
                 <p className="max-w-4xl mx-auto px-4 mb-3" data-testid="footer-disclaimer-text">
                     eGhanaVisa.com is an <strong className="text-white/70">independent third-party</strong> travel assistance platform and is <strong className="text-white/70">not affiliated with or operated by</strong> the Government of Ghana, the Ghana Immigration Service or the Ministry of Foreign Affairs.
                 </p>

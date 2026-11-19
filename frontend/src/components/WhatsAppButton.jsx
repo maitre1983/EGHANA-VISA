@@ -42,7 +42,7 @@ export default function WhatsAppButton() {
 
     return (
         <div
-            className="fixed z-[60] bottom-4 right-4 md:bottom-6 md:right-6"
+            className="fixed z-[60] bottom-4 right-4 md:bottom-6 md:right-6 flex flex-col items-end"
             data-testid="whatsapp-widget-root"
         >
             {open && (

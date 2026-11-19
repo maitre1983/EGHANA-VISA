@@ -1,0 +1,30 @@
+{
+  "summary": "Frontend-only test of the floating Abena/WhatsApp buttons and the new visa-sample-note text. The note matches the requested sentence exactly on mobile and desktop. On mobile 390x844 the buttons sit side by side and do not overlap: Abena at x246-302 and WhatsApp at x318-374, both at bottom 16px. A scroll scan of the whole /apply main content found no text or input that stays hidden at every scroll position. However, at the very end of every page the last footer lines are permanently covered by the buttons. These are the legal 'not affiliated with the Government of Ghana...' disclaimer and the copyright line, on /apply, /, /prices and /faq. The extra pb-28 padding only applies to the Apply content, not to the footer. Abena chat opens fully inside the viewport (mobile [15,228,374,748], desktop [1464,184,1824,704]), gets a real reply from the AI, and closes. The WhatsApp panel opens, the CTA passes a hit-test at 4 points and is not covered by Abena, the wa.me link is correct, and the panel closes. On desktop 1920x800, Abena is left of WhatsApp with no overlap and the bottoms line up at 776.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Footer (Layout) on mobile, all public pages", "issue": "At maximum scroll the Abena and WhatsApp buttons (bottom-right, y772-828) permanently cover the last footer text lines: 'the Government of Ghana, the Ghana Immigration Service or th[e Ministry of Foreign Affairs]' and '© 2026 eghanavisa.com — All rights reserved'. These lines cannot be revealed by scrolling because the footer has padding-bottom 0. Confirmed by text-range intersection on /apply, /, /prices and /faq.", "selector": "footer", "priority": "HIGH"},
+      {"component": "WhatsAppButton toggle", "issue": "When the WhatsApp panel opens, the root container widens to the panel width (300px on mobile, 340px on desktop). The toggle/close button then jumps to the left edge of the container: mobile x~74 and desktop x~1272, so it ends up to the LEFT of the Abena button. It does not overlap anything, but the button visibly changes place and swaps order with Abena. Suggest right-aligning the button inside the root (flex flex-col items-end).", "selector": "[data-testid=whatsapp-floating-button]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Mobile footer", "issues": ["The Abena button background is rgb(10,10,10), so over the black footer it has very low contrast and is barely visible apart from its gold icon."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Add bottom padding on mobile to the footer, or to the page/body for all pages (e.g. pb-24 md:pb-0 on the footer's last section), so the legal disclaimer and copyright can scroll above the floating buttons.",
+    "Optional: keep the WhatsApp toggle anchored at the right when its panel is open (items-end on the root).",
+    "Optional: add a light ring or border to the Abena button so it stands out on the dark footer."
+  ],
+  "critical_code_review_comments": [
+    "The Apply.jsx pb-28 md:pb-12 fix covers only the Apply content; the actual hidden content is the shared footer, so the fix belongs in the Layout/footer.",
+    "The Abena panel (z-50) and the WhatsApp panel (z-60) can both be open at the same time and would overlap on mobile. Consider closing one when the other opens."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A", "frontend": "85%"},
+  "seed_data_creation": "None. No applications were submitted. Two Abena chat messages were sent.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Dismiss the cookie banner by setting localStorage egv_cookie_consent_v1. Test ids: abena-open, abena-send, abena-close, whatsapp-floating-button, whatsapp-widget-panel, whatsapp-widget-cta, visa-sample-note. To retest, scroll to the bottom on 390x844 and intersect the footer text ranges with the button rects."
+}

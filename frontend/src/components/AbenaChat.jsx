@@ -52,7 +52,7 @@ export default function AbenaChat() {
             <button
                 data-testid="abena-open"
                 onClick={() => setOpen((o) => !o)}
-                className="fixed bottom-4 right-[5.5rem] md:bottom-6 md:right-24 w-14 h-14 rounded-full shadow-xl z-50 flex items-center justify-center transition-transform hover:scale-105"
+                className="fixed bottom-4 right-[5.5rem] md:bottom-6 md:right-24 w-14 h-14 rounded-full shadow-xl ring-2 ring-white z-50 flex items-center justify-center transition-transform hover:scale-105"
                 style={{ background: "#0A0A0A", color: "#FCD116" }}
                 aria-label="Open Abena chat"
             >
