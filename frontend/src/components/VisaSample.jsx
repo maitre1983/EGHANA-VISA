@@ -1,25 +1,23 @@
 import React from "react";
 
-/** Blurred Ghana Visa sample preview panel — right column of Apply page. */
+/** Illustrative (fictitious) travel-document preview — right column of Apply page. Not a real visa. */
 export default function VisaSample({ name, passport, arrival, departure, visaType }) {
     return (
         <div
             data-testid="visa-sample-card"
-            className="relative w-full aspect-[3/2] bg-white border-2 border-ghana-black/10 rounded-xl overflow-hidden shadow-lg grain-overlay"
+            aria-label="Illustrative sample only — not a real visa"
+            className="relative w-full flex flex-col bg-white border-2 border-dashed border-ghana-black/20 rounded-xl overflow-hidden shadow-lg grain-overlay"
         >
             {/* Header */}
-            <div className="h-12 bg-ghana-green flex items-center justify-between px-4">
-                <span className="text-white font-heading font-bold uppercase tracking-widest text-xs">Republic of Ghana</span>
-                <span className="text-ghana-gold font-heading font-bold uppercase tracking-widest text-xs">Visa on Arrival</span>
+            <div className="min-h-12 py-2 bg-ghana-green flex items-center justify-between px-4 gap-2">
+                <span className="text-white font-heading font-bold uppercase tracking-wider text-[10px] leading-tight" data-testid="visa-sample-header">eGhanaVisa · Fictitious example</span>
+                <span className="shrink-0 text-ghana-black bg-ghana-gold font-heading font-bold uppercase tracking-widest text-[9px] sm:text-[10px] px-2 py-0.5 rounded">Not a real visa</span>
             </div>
 
-            <div className="p-4 grid grid-cols-3 gap-4">
-                {/* Photo placeholder */}
+            <div className="p-4 pb-5 grid grid-cols-3 gap-4 flex-1">
                 <div className="col-span-1 aspect-[3/4] bg-gray-200 rounded border border-gray-300 flex items-center justify-center overflow-hidden">
                     <div className="w-full h-full bg-gradient-to-br from-gray-300 to-gray-400 visa-blur" />
                 </div>
-
-                {/* Data */}
                 <div className="col-span-2 space-y-2">
                     {[
                         { label: "Full name", value: name || "AAAAAAAAAAAA AAAA" },
@@ -36,14 +34,16 @@ export default function VisaSample({ name, passport, arrival, departure, visaTyp
                 </div>
             </div>
 
-            {/* QR mock */}
-            <div className="absolute bottom-3 right-3 w-14 h-14 rounded border border-gray-300 visa-blur"
-                 style={{ background: "conic-gradient(from 0deg,#CE1126,#FCD116,#006B3F,#CE1126)" }} />
+            {/* Watermark */}
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center" data-testid="visa-sample-watermark">
+                <span className="-rotate-[18deg] whitespace-nowrap font-heading font-extrabold uppercase tracking-[0.15em] text-base sm:text-xl text-ghana-red/25 border-4 border-ghana-red/25 rounded-lg px-4 py-1">
+                    Sample / Illustration
+                </span>
+            </div>
 
-            {/* Footer */}
-            <div className="absolute bottom-0 left-0 right-0 h-8 bg-ghana-black text-white text-[9px] uppercase tracking-widest flex items-center justify-between px-4">
-                <span>Comptroller-General of Immigration</span>
-                <span className="text-ghana-red">Employment Prohibited</span>
+            {/* Footer disclaimer */}
+            <div className="bg-ghana-black text-white/90 text-[8px] sm:text-[9px] uppercase tracking-wider flex items-center justify-center text-center px-3 py-1.5" data-testid="visa-sample-disclaimer">
+                Illustration only — not an authentic visa and not issued by the Ghanaian authorities
             </div>
         </div>
     );
