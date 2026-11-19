@@ -63,6 +63,7 @@ def _normalize_app(a: dict) -> dict | None:
         "currency": "USD",
         "network": None,
         "status": "paid",
+        "audit_only": False,
         "payment_method_label": a.get("payment_method") or "",
     }
 
@@ -160,27 +161,36 @@ async def list_transactions(
     confirmed_refs = {t["provider_reference"] for t in app_txs if t.get("provider_reference")}
     known_trackings = {t["tracking_no"] for t in app_txs if t.get("tracking_no")}
 
-    # 2. Hubtel callback trail (adds failed/expired/orphans)
+    # 2. Hubtel callback trail (adds failed/expired/orphans + audit-only dupes)
     hubtel_txs: list[dict] = []
     async for cb in db.hubtel_callbacks.find({}, {"_id": 0}):
         n = _normalize_hubtel_cb(cb)
-        if n["provider_reference"] and n["provider_reference"] in confirmed_refs:
-            continue  # already covered by the confirmed application row
-        if not n.get("tracking_no") or n["tracking_no"] not in known_trackings:
-            # keep status for pending/failed/expired, otherwise label orphan
-            if n["status"] == "paid":
-                n["status"] = "unmatched"
+        is_duplicate = bool(n["provider_reference"]) and n["provider_reference"] in confirmed_refs
+        if is_duplicate:
+            # Preserve the callback so admins can still audit the raw event,
+            # but mark it audit-only so it never contributes to revenue totals.
+            n["audit_only"] = True
+            n["status"] = "deduplicated"
+        else:
+            n["audit_only"] = False
+            if not n.get("tracking_no") or n["tracking_no"] not in known_trackings:
+                if n["status"] == "paid":
+                    n["status"] = "unmatched"
         hubtel_txs.append(n)
 
     # 3. Crypto callback trail
     crypto_txs: list[dict] = []
     async for p in db.crypto_payments.find({}, {"_id": 0}):
         n = _normalize_crypto(p)
-        if n["provider_reference"] and n["provider_reference"] in confirmed_refs:
-            continue
-        if not n.get("tracking_no") or n["tracking_no"] not in known_trackings:
-            if n["status"] == "paid":
-                n["status"] = "unmatched"
+        is_duplicate = bool(n["provider_reference"]) and n["provider_reference"] in confirmed_refs
+        if is_duplicate:
+            n["audit_only"] = True
+            n["status"] = "deduplicated"
+        else:
+            n["audit_only"] = False
+            if not n.get("tracking_no") or n["tracking_no"] not in known_trackings:
+                if n["status"] == "paid":
+                    n["status"] = "unmatched"
         crypto_txs.append(n)
 
     merged = app_txs + hubtel_txs + crypto_txs
@@ -220,10 +230,11 @@ def compute_summary(txs: Iterable[dict]) -> dict:
     are reported as counts so admins can see them without inflating revenue.
     """
     by_bucket: dict[tuple[str, str], float] = {}
-    counts: dict[str, int] = {"paid": 0, "pending": 0, "failed": 0, "expired": 0, "refunded": 0, "unmatched": 0}
+    counts: dict[str, int] = {"paid": 0, "pending": 0, "failed": 0, "expired": 0, "refunded": 0, "unmatched": 0, "deduplicated": 0}
     for t in txs:
         counts[t["status"]] = counts.get(t["status"], 0) + 1
-        if t["status"] != "paid":
+        # Skip audit-only duplicates and any non-paid status for revenue.
+        if t.get("audit_only") or t["status"] != "paid":
             continue
         key = (t["provider"], (t["currency"] or "USD").upper())
         by_bucket[key] = by_bucket.get(key, 0.0) + float(t.get("amount") or 0)
@@ -244,7 +255,7 @@ def to_csv(txs: list[dict]) -> str:
     fields = [
         "date", "provider", "provider_reference", "tracking_no",
         "customer_name", "customer_email", "amount", "currency",
-        "network", "status", "payment_method_label", "source",
+        "network", "status", "audit_only", "payment_method_label", "source",
     ]
     w = csv.DictWriter(buf, fieldnames=fields, extrasaction="ignore")
     w.writeheader()

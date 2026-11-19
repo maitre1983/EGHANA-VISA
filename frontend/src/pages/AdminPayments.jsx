@@ -3,7 +3,7 @@ import api from "../lib/api";
 import { toast } from "sonner";
 import {
     RefreshCw, Search, Calendar, Download, Eye, X,
-    CheckCircle2, Clock, XCircle, AlertTriangle, Undo2, HelpCircle,
+    CheckCircle2, Clock, XCircle, AlertTriangle, Undo2, HelpCircle, Copy,
 } from "lucide-react";
 
 // GMT = UTC for Ghana (no DST). Shared formatter.
@@ -17,12 +17,13 @@ const fmtDate = (iso) => {
 };
 
 const STATUS_META = {
-    paid:      { label: "Paid",      icon: CheckCircle2, cls: "bg-ghana-green text-white" },
-    pending:   { label: "Pending",   icon: Clock,        cls: "bg-ghana-gold text-ghana-black" },
-    failed:    { label: "Failed",    icon: XCircle,      cls: "bg-ghana-red text-white" },
-    expired:   { label: "Expired",   icon: AlertTriangle,cls: "bg-slate-500 text-white" },
-    refunded:  { label: "Refunded",  icon: Undo2,        cls: "bg-indigo-500 text-white" },
-    unmatched: { label: "Unmatched", icon: HelpCircle,   cls: "bg-orange-500 text-white" },
+    paid:          { label: "Paid",          icon: CheckCircle2, cls: "bg-ghana-green text-white" },
+    pending:       { label: "Pending",       icon: Clock,        cls: "bg-ghana-gold text-ghana-black" },
+    failed:        { label: "Failed",        icon: XCircle,      cls: "bg-ghana-red text-white" },
+    expired:       { label: "Expired",       icon: AlertTriangle,cls: "bg-slate-500 text-white" },
+    refunded:      { label: "Refunded",      icon: Undo2,        cls: "bg-indigo-500 text-white" },
+    unmatched:     { label: "Unmatched",     icon: HelpCircle,   cls: "bg-orange-500 text-white" },
+    deduplicated:  { label: "Deduplicated",  icon: Copy,         cls: "bg-slate-300 text-slate-700" },
 };
 
 const PROVIDERS = [
@@ -33,13 +34,14 @@ const PROVIDERS = [
 ];
 
 const STATUSES = [
-    { key: "", label: "All statuses" },
+    { key: "", label: "All (hide audit-only)" },
     { key: "paid", label: "Paid" },
     { key: "pending", label: "Pending" },
     { key: "failed", label: "Failed" },
     { key: "expired", label: "Expired" },
     { key: "refunded", label: "Refunded" },
     { key: "unmatched", label: "Unmatched" },
+    { key: "deduplicated", label: "Deduplicated (audit only)" },
 ];
 
 export default function AdminPayments() {
@@ -111,7 +113,13 @@ export default function AdminPayments() {
     };
 
     const sorted = useMemo(() => {
-        const list = [...data.transactions];
+        // Hide deduplicated callbacks from the main view unless the admin
+        // explicitly asks for them via the Status filter — they still exist
+        // for audit but must never inflate the visible count.
+        const base = (status === "deduplicated")
+            ? data.transactions
+            : data.transactions.filter((t) => t.status !== "deduplicated");
+        const list = [...base];
         const dir = sortDir === "asc" ? 1 : -1;
         list.sort((a, b) => {
             const va = a[sortKey] ?? "";
@@ -120,7 +128,7 @@ export default function AdminPayments() {
             return String(va).localeCompare(String(vb)) * dir;
         });
         return list;
-    }, [data.transactions, sortKey, sortDir]);
+    }, [data.transactions, sortKey, sortDir, status]);
 
     const toggleSort = (key) => {
         if (sortKey === key) { setSortDir(sortDir === "asc" ? "desc" : "asc"); }

@@ -146,6 +146,45 @@ async def _notify_admin(template_name: str, context: dict) -> None:
         logger.warning(f"Admin notification failed ({template_name}): {e}")
 
 
+async def _notify_payment_event(event: str, *, tracking: str | None, reference: str | None, context: dict) -> bool:
+    """Idempotent payment-lifecycle alert for admins.
+
+    event ∈ {"failed", "expired", "refunded"}. Dedupe key is
+    (event, tracking or reference) — if we have already fired this event
+    for this payment we return False and send nothing. Never raises.
+
+    Only call when the provider has delivered a CONFIRMED event via an
+    authenticated callback — never on a merely-initiated or guessed status.
+    """
+    template_map = {
+        "failed":   "admin_payment_failed",
+        "expired":  "admin_payment_expired",
+        "refunded": "admin_payment_refunded",
+    }
+    tpl = template_map.get(event)
+    if not tpl:
+        return False
+    # Idempotency guard — unique key per (event, reference|tracking).
+    key = f"{event}:{reference or tracking or 'unknown'}"
+    try:
+        existing = await db.payment_notifications_log.find_one({"key": key}, {"_id": 0})
+        if existing:
+            logger.info(f"payment_event[{event}] already notified for {key} - skipping")
+            return False
+        await db.payment_notifications_log.insert_one({
+            "key": key,
+            "event": event,
+            "tracking": tracking,
+            "reference": reference,
+            "created_at": now_iso(),
+        })
+    except Exception as e:
+        logger.warning(f"payment_notifications_log write failed for {key}: {e}")
+    await _notify_admin(tpl, context)
+    return True
+
+
+
 # ────────────────────────── STARTUP ──────────────────────────
 async def _seed_default_admin() -> None:
     admin_email = os.environ.get("DEFAULT_ADMIN_EMAIL", "admin@eghanavisa.com")
@@ -745,6 +784,23 @@ async def hubtel_webhook(request: Request):
         await db.applications.update_one(
             {"tracking_no": client_ref},
             {"$set": {"payment_status": "failed", "updated_at": now_iso()}},
+        )
+        # Fire admin alert — idempotent. Hubtel delivered an authenticated
+        # non-success callback, so we treat it as a confirmed failure.
+        await _notify_payment_event(
+            "failed",
+            tracking=client_ref,
+            reference=checkout_id or app_doc.get("payment_transaction_id"),
+            context={
+                "tracking": client_ref,
+                "name": app_doc.get("full_name", ""),
+                "amount": f"{float(app_doc.get('amount_usd') or 0):.2f}",
+                "currency": "USD",
+                "provider": "Hubtel",
+                "reference": checkout_id or app_doc.get("payment_transaction_id") or "—",
+                "status": (inner.get("Status") or data.get("Status") or "failed"),
+                "event_time": now_iso(),
+            },
         )
     return {"ok": True}
 
@@ -1588,6 +1644,30 @@ async def _apply_crypto_status_update(payment_id: str, np_status: str, payload: 
                 "payment_method": f"USDT {doc['network'].upper()} (NowPayments)",
                 "paid_at": now_iso(),
             })
+
+    # Failure-lifecycle alerts — only on confirmed provider status strings.
+    # NowPayments documented terminal/incident statuses:
+    #   failed, expired  → failure
+    #   refunded         → refund
+    # "partially_paid" and "confirming" stay silent (not confirmed).
+    elif np_status in ("failed", "expired", "refunded"):
+        event = {"failed": "failed", "expired": "expired", "refunded": "refunded"}[np_status]
+        app_doc = await db.applications.find_one({"tracking_no": doc.get("tracking_no")}, {"_id": 0}) if doc.get("tracking_no") else None
+        await _notify_payment_event(
+            event,
+            tracking=doc.get("tracking_no"),
+            reference=payment_id,
+            context={
+                "tracking": doc.get("tracking_no") or "—",
+                "name": (app_doc or {}).get("full_name", "—"),
+                "amount": f"{float(doc.get('amount') or (app_doc or {}).get('amount_usd') or 0):.2f}",
+                "currency": (doc.get("pay_currency") or "USDT").upper(),
+                "provider": f"NOWPayments ({(doc.get('network') or 'crypto').upper()})",
+                "reference": payment_id,
+                "status": np_status,
+                "event_time": now_iso(),
+            },
+        )
 
 
 @app.post("/api/webhooks/nowpayments")

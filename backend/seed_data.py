@@ -106,7 +106,7 @@ BASE_CSS = "font-family:Inter,Arial,sans-serif;color:#0A0A0A;line-height:1.6;"
 BOX = "border:1px solid #e5e7eb;border-radius:12px;padding:24px;max-width:560px;margin:24px auto;background:#fff;"
 BADGE = "display:inline-block;padding:4px 10px;border-radius:999px;background:#006B3F;color:#fff;font-weight:600;letter-spacing:1px;font-size:12px;"
 
-EMAIL_TEMPLATES_VERSION: int = 5  # bump to force re-seed of email_templates on next startup
+EMAIL_TEMPLATES_VERSION: int = 6  # bump to force re-seed of email_templates on next startup
 
 
 def _wrap(title: str, body_html: str) -> str:
@@ -257,6 +257,75 @@ DEFAULT_EMAIL_TEMPLATES: List[Dict[str, Any]] = [
   <tr><td style="padding:6px 0;color:#64748b;">Paid at</td><td style="padding:6px 0;">{{paid_at}}</td></tr>
 </table>
 <p style="margin-top:16px;">You can now review and process this application from the Admin Command Center.</p>
+<p style="margin-top:20px;text-align:center;">
+  <a href="{{backoffice_link}}" style="display:inline-block;background:#0e7d3b;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Open Back Office →</a>
+</p>
+""",
+        ),
+    ),
+    # ---- Payment lifecycle incident alerts (admin-only, additive to _success above) ----
+    _tpl(
+        "admin_payment_failed", "en",
+        "[e.GHANA VISA] Payment FAILED {{tracking}} — {{amount}} {{currency}}",
+        _wrap(
+            "Payment Failed",
+            """
+<p style="color:#b91c1c;">A payment attempt has failed. The application remains unpaid.</p>
+<table style="width:100%;font-size:14px;border-collapse:collapse;margin-top:12px;">
+  <tr><td style="padding:6px 0;color:#64748b;">Tracking #</td><td style="padding:6px 0;"><strong>{{tracking}}</strong></td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Client</td><td style="padding:6px 0;">{{name}}</td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Amount</td><td style="padding:6px 0;"><strong>{{amount}} {{currency}}</strong></td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Provider</td><td style="padding:6px 0;">{{provider}}</td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Reference</td><td style="padding:6px 0;font-family:monospace;">{{reference}}</td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Status</td><td style="padding:6px 0;">{{status}}</td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Event time</td><td style="padding:6px 0;">{{event_time}}</td></tr>
+</table>
+<p style="margin-top:20px;text-align:center;">
+  <a href="{{backoffice_link}}" style="display:inline-block;background:#0e7d3b;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Open Back Office →</a>
+</p>
+""",
+        ),
+    ),
+    _tpl(
+        "admin_payment_expired", "en",
+        "[e.GHANA VISA] Payment EXPIRED {{tracking}} — {{amount}} {{currency}}",
+        _wrap(
+            "Payment Expired",
+            """
+<p style="color:#64748b;">A payment session expired before the funds were received.</p>
+<table style="width:100%;font-size:14px;border-collapse:collapse;margin-top:12px;">
+  <tr><td style="padding:6px 0;color:#64748b;">Tracking #</td><td style="padding:6px 0;"><strong>{{tracking}}</strong></td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Client</td><td style="padding:6px 0;">{{name}}</td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Amount</td><td style="padding:6px 0;"><strong>{{amount}} {{currency}}</strong></td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Provider</td><td style="padding:6px 0;">{{provider}}</td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Reference</td><td style="padding:6px 0;font-family:monospace;">{{reference}}</td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Status</td><td style="padding:6px 0;">{{status}}</td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Event time</td><td style="padding:6px 0;">{{event_time}}</td></tr>
+</table>
+<p style="margin-top:16px;color:#64748b;font-size:13px;">You may want to follow up with the applicant or regenerate the payment link.</p>
+<p style="margin-top:20px;text-align:center;">
+  <a href="{{backoffice_link}}" style="display:inline-block;background:#0e7d3b;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Open Back Office →</a>
+</p>
+""",
+        ),
+    ),
+    _tpl(
+        "admin_payment_refunded", "en",
+        "[e.GHANA VISA] Payment REFUNDED {{tracking}} — {{amount}} {{currency}}",
+        _wrap(
+            "Payment Refunded",
+            """
+<p style="color:#4338ca;">A payment refund has been recorded for the application below.</p>
+<table style="width:100%;font-size:14px;border-collapse:collapse;margin-top:12px;">
+  <tr><td style="padding:6px 0;color:#64748b;">Tracking #</td><td style="padding:6px 0;"><strong>{{tracking}}</strong></td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Client</td><td style="padding:6px 0;">{{name}}</td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Amount</td><td style="padding:6px 0;"><strong>{{amount}} {{currency}}</strong></td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Provider</td><td style="padding:6px 0;">{{provider}}</td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Reference</td><td style="padding:6px 0;font-family:monospace;">{{reference}}</td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Status</td><td style="padding:6px 0;">{{status}}</td></tr>
+  <tr><td style="padding:6px 0;color:#64748b;">Event time</td><td style="padding:6px 0;">{{event_time}}</td></tr>
+</table>
+<p style="margin-top:16px;color:#64748b;font-size:13px;">Verify this refund with the provider dashboard and update the application status accordingly.</p>
 <p style="margin-top:20px;text-align:center;">
   <a href="{{backoffice_link}}" style="display:inline-block;background:#0e7d3b;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Open Back Office →</a>
 </p>
