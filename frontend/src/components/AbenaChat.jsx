@@ -52,7 +52,7 @@ export default function AbenaChat() {
             <button
                 data-testid="abena-open"
                 onClick={() => setOpen((o) => !o)}
-                className="fixed bottom-24 right-6 md:bottom-6 md:right-24 w-14 h-14 rounded-full shadow-xl z-50 flex items-center justify-center transition-transform hover:scale-105"
+                className="fixed bottom-44 right-4 md:bottom-6 md:right-24 w-14 h-14 rounded-full shadow-xl z-50 flex items-center justify-center transition-transform hover:scale-105"
                 style={{ background: "#0A0A0A", color: "#FCD116" }}
                 aria-label="Open Abena chat"
             >
@@ -62,7 +62,7 @@ export default function AbenaChat() {
             {open && (
                 <div
                     data-testid="abena-window"
-                    className="fixed bottom-40 right-6 md:bottom-24 md:right-24 w-[360px] max-w-[92vw] h-[520px] bg-white rounded-xl shadow-2xl overflow-hidden z-50 flex flex-col border border-black/10"
+                    className="fixed bottom-60 right-4 md:bottom-24 md:right-24 w-[360px] max-w-[92vw] h-[520px] max-h-[calc(100vh-16rem)] md:max-h-[calc(100vh-7rem)] bg-white rounded-xl shadow-2xl overflow-hidden z-50 flex flex-col border border-black/10"
                 >
                     <div className="bg-ghana-black text-white px-4 py-3 flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full ghana-stripe flex items-center justify-center text-ghana-black font-heading font-extrabold text-sm">A</div>

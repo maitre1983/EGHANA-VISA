@@ -44,10 +44,43 @@ export default function AdminHealth() {
                 <Stat label="Payments failed (24h)" value={data.payments_24h.failed} testid="health-failed-24h" warn={data.payments_24h.failed > 0} />
                 <Stat label="Last confirmed payment" value={data.last_paid ? fmtDateTime(data.last_paid.paid_at) : "—"} sub={data.last_paid?.tracking_no} testid="health-last-paid" small />
             </div>
+            <PendingVerifications />
             <History history={data.history} />
         </div>
     );
 }
+
+const PendingVerifications = () => {
+    const [rows, setRows] = useState([]);
+    const load = () => api.get("/admin/payment-verifications").then(({ data }) => setRows(data)).catch(() => {});
+    useEffect(() => { load(); }, []);
+    const verify = async (t) => {
+        try {
+            const { data } = await api.post(`/admin/applications/${t}/verify-payment`);
+            data.state === "verified" ? toast.success(`${t} confirmed paid by Hubtel`) : toast.message(`${t}: ${data.state}`);
+        } catch (e) { toast.error(e?.response?.data?.detail || "Verification failed"); }
+        load();
+    };
+    return (
+        <div className="mt-8 bg-white rounded-xl border border-black/10 p-6" data-testid="pending-verifications">
+            <div className="font-heading font-semibold">Hubtel payments awaiting verification</div>
+            <p className="text-xs text-slate-500 mt-1">Live card payments are only marked paid after Hubtel's status API confirms them. Unconfirmed ones are retried automatically every 15 minutes.</p>
+            {rows.length === 0 && <div className="mt-3 text-sm text-slate-500" data-testid="pending-verifications-empty">Nothing pending.</div>}
+            <div className="mt-3 divide-y divide-black/5">
+                {rows.map((r) => (
+                    <div key={r.tracking_no} className="py-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm" data-testid={`pending-verification-${r.tracking_no}`}>
+                        <span className="font-mono">{r.tracking_no}</span>
+                        <span>{r.full_name}</span>
+                        <span className="text-slate-500">{r.amount_charged} {r.payment_currency}</span>
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-ghana-gold/20">{r.payment_verification?.state}</span>
+                        <span className="text-xs text-slate-400 truncate max-w-xs" title={r.payment_verification?.last_error || ""}>{r.payment_verification?.last_error}</span>
+                        <button onClick={() => verify(r.tracking_no)} data-testid={`verify-payment-${r.tracking_no}`} className="ml-auto text-xs border border-black/10 px-3 py-1.5 rounded-md hover:bg-slate-50">Verify now</button>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
 
 const GatewayCard = ({ r, uptime }) => {
     const m = META[r.gateway] || { label: r.gateway, icon: Activity };

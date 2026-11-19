@@ -31,6 +31,7 @@ from hubtel_service import (
     is_ready_for_live as _hubtel_ready,
     missing_live_fields as _hubtel_missing,
     HubtelNotConfiguredError,
+    check_transaction_status,
 )
 from fx_service import (
     convert_usd_to_ghs as _convert_usd_ghs,
@@ -414,8 +415,13 @@ async def _seed_email_templates_if_needed() -> None:
                 upsert=True,
             )
         return
-    await db.email_templates.delete_many({})
-    await db.email_templates.insert_many([dict(t) for t in DEFAULT_EMAIL_TEMPLATES])
+    # Non-destructive: add missing templates only, never overwrite admin edits.
+    for t in DEFAULT_EMAIL_TEMPLATES:
+        await db.email_templates.update_one(
+            {"template_name": t["template_name"], "lang": t["lang"]},
+            {"$setOnInsert": dict(t)},
+            upsert=True,
+        )
     await db.template_versions.update_one(
         {"id": "email_templates"},
         {"$set": {"version": EMAIL_TEMPLATES_VERSION, "updated_at": now_iso()}},
@@ -844,10 +850,18 @@ async def payment_status(tracking_no: str):
     /payment/return page to poll after Hubtel redirects the customer back."""
     doc = await db.applications.find_one(
         {"tracking_no": tracking_no},
-        {"_id": 0, "payment_status": 1, "status": 1, "tracking_no": 1, "visa_name": 1, "amount_usd": 1},
+        {"_id": 0, "payment_status": 1, "status": 1, "tracking_no": 1, "visa_name": 1, "amount_usd": 1,
+         "payment_method": 1, "payment_verification": 1},
     )
     if not doc:
         raise HTTPException(status_code=404, detail="Application not found")
+    # Live Hubtel: nudge a server-side verification (throttled) in case the callback is late or lost.
+    if doc.get("payment_method") == "hubtel" and doc.get("payment_status") != "paid":
+        last = (doc.get("payment_verification") or {}).get("checked_at") or ""
+        stale = not last or (datetime.now(timezone.utc) - datetime.fromisoformat(last)).total_seconds() > 20
+        if stale and not is_sandbox((await get_settings()).get("hubtel", {})):
+            await db.applications.update_one({"tracking_no": tracking_no}, {"$set": {"payment_verification.checked_at": now_iso()}})
+            asyncio.create_task(_verify_hubtel_payment(tracking_no))
     return {
         "tracking_no": doc["tracking_no"],
         "payment_status": doc.get("payment_status", "pending"),
@@ -914,8 +928,21 @@ async def hubtel_webhook(request: Request):
         # Mismatch — log but don't crash; some Hubtel plans use different id fields
         logger.info(f"Hubtel callback checkoutId={checkout_id} vs stored tx={stored_tx} (mismatch, still processing)")
 
+    hubtel_cfg = (await get_settings()).get("hubtel", {})
+    if not is_sandbox(hubtel_cfg):
+        # LIVE: a callback is only a trigger — the Hubtel Status API is the authority.
+        if app_doc.get("payment_status") != "paid":
+            asyncio.create_task(_verify_hubtel_payment(
+                client_ref, callback_success=_hubtel_success(data),
+                reference=checkout_id or app_doc.get("payment_transaction_id"),
+            ))
+        return {"ok": True}
+
     if _hubtel_success(data):
         await _mark_application_paid(app_doc, payment_method="Visa card (Hubtel)")
+    elif app_doc.get("payment_status") == "paid":
+        # Never downgrade a confirmed payment on a late/duplicate non-success callback.
+        logger.info(f"Hubtel non-success callback ignored for already-paid {client_ref}")
     else:
         await db.applications.update_one(
             {"tracking_no": client_ref},
@@ -939,6 +966,79 @@ async def hubtel_webhook(request: Request):
             },
         )
     return {"ok": True}
+
+
+async def _verify_hubtel_payment(tracking_no: str, *, callback_success: Optional[bool] = None, reference: Optional[str] = None) -> str:
+    """Confirm a LIVE Hubtel payment via the Transaction Status API before
+    marking it paid. Returns the resulting verification state."""
+    app_doc = await db.applications.find_one({"tracking_no": tracking_no}, {"_id": 0})
+    if not app_doc:
+        return "not_found"
+    if app_doc.get("payment_status") == "paid":
+        return "paid"
+    cfg = (await get_settings()).get("hubtel", {})
+    prev = app_doc.get("payment_verification") or {}
+    ver = {"checked_at": now_iso(), "attempts": int(prev.get("attempts", 0)) + 1, "last_error": None}
+    try:
+        data = await asyncio.to_thread(check_transaction_status, cfg, tracking_no)
+    except Exception as e:
+        ver.update(state="error", last_error=str(e)[:300])
+        await db.applications.update_one({"tracking_no": tracking_no}, {"$set": {"payment_verification": ver}})
+        logger.warning(f"Hubtel verification error for {tracking_no}: {e}")
+        return "error"
+
+    status = str(data.get("status", "")).lower()
+    expected = float(app_doc.get("amount_charged") or 0)
+    try:
+        paid_amount = float(data.get("amount") or 0)
+    except (TypeError, ValueError):
+        paid_amount = 0.0
+    ref_ok = str(data.get("clientReference") or "") == tracking_no
+    amount_ok = expected > 0 and paid_amount + 0.05 >= expected
+    ver["hubtel"] = {k: data.get(k) for k in ("status", "amount", "transactionId", "externalTransactionId", "paymentMethod", "date", "clientReference")}
+
+    if status == "paid" and ref_ok and amount_ok:
+        ver["state"] = "verified"
+        await db.applications.update_one({"tracking_no": tracking_no}, {"$set": {"payment_verification": ver}})
+        await _mark_application_paid(app_doc, payment_method="Visa card (Hubtel)")
+        return "verified"
+    if status == "paid":
+        ver.update(state="mismatch", last_error=f"reference_ok={ref_ok} amount={paid_amount} expected={expected}")
+        logger.warning(f"Hubtel verification MISMATCH for {tracking_no}: {ver['last_error']}")
+    elif status == "refunded":
+        ver["state"] = "refunded"
+    else:
+        ver["state"] = "unpaid"
+    await db.applications.update_one({"tracking_no": tracking_no}, {"$set": {"payment_verification": ver}})
+    if ver["state"] == "unpaid" and callback_success is False:
+        await db.applications.update_one(
+            {"tracking_no": tracking_no}, {"$set": {"payment_status": "failed", "updated_at": now_iso()}},
+        )
+        await _notify_payment_event("failed", tracking=tracking_no, reference=reference, context={
+            "tracking": tracking_no, "name": app_doc.get("full_name", ""),
+            "amount": f"{float(app_doc.get('amount_usd') or 0):.2f}", "currency": "USD",
+            "provider": "Hubtel", "reference": reference or "—", "status": "Unpaid (verified)",
+            "event_time": now_iso(),
+        })
+    return ver["state"]
+
+
+async def _reconcile_pending_hubtel() -> int:
+    """Retry verification for recent live Hubtel payments still unconfirmed."""
+    cfg = (await get_settings()).get("hubtel", {})
+    if is_sandbox(cfg):
+        return 0
+    since = datetime.fromtimestamp(datetime.now(timezone.utc).timestamp() - 48 * 3600, tz=timezone.utc).isoformat()
+    docs = await db.applications.find({
+        "payment_status": {"$ne": "paid"},
+        "payment_method": "hubtel",
+        "payment_verification.state": {"$in": ["error", "unpaid"]},
+        "payment_verification.attempts": {"$lt": 12},
+        "updated_at": {"$gte": since},
+    }, {"_id": 0, "tracking_no": 1}).limit(50).to_list(50)
+    for d in docs:
+        await _verify_hubtel_payment(d["tracking_no"])
+    return len(docs)
 
 
 # ────────────────────── TRACKING ──────────────────────
@@ -2187,8 +2287,33 @@ async def cron_gateway_health(request: Request):
             await _check_gateways_and_alert()
         except Exception as e:
             logger.warning(f"gateway health cron failed: {e}")
+        try:
+            await _reconcile_pending_hubtel()
+        except Exception as e:
+            logger.warning(f"hubtel reconciliation failed: {e}")
     asyncio.create_task(_job())
     return {"ok": True, "accepted": run_id}
+
+
+@api.get("/admin/payment-verifications")
+async def admin_payment_verifications(ctx: dict = Depends(require_admin)):
+    """Live Hubtel payments awaiting or failing server-side verification."""
+    return await db.applications.find(
+        {"payment_status": {"$ne": "paid"}, "payment_verification.state": {"$in": ["error", "unpaid", "mismatch", "refunded"]}},
+        {"_id": 0, "tracking_no": 1, "full_name": 1, "amount_usd": 1, "amount_charged": 1, "payment_currency": 1,
+         "payment_verification": 1, "updated_at": 1},
+    ).sort("updated_at", -1).limit(100).to_list(100)
+
+
+@api.post("/admin/applications/{tracking_no}/verify-payment")
+async def admin_verify_payment(tracking_no: str, ctx: dict = Depends(require_admin)):
+    if is_sandbox((await get_settings()).get("hubtel", {})):
+        raise HTTPException(status_code=400, detail="Hubtel is in sandbox mode — nothing to verify")
+    state = await _verify_hubtel_payment(tracking_no)
+    if state == "not_found":
+        raise HTTPException(status_code=404, detail="Application not found")
+    doc = await db.applications.find_one({"tracking_no": tracking_no}, {"_id": 0, "payment_verification": 1, "payment_status": 1})
+    return {"state": state, **doc}
 
 
 

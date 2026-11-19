@@ -58,6 +58,23 @@ export default function AdminLayout() {
                 </div>
             </aside>
             <main className="flex-1 min-w-0">
+                <div className="md:hidden sticky top-0 z-30 bg-ghana-black text-white" data-testid="admin-mobile-nav">
+                    <div className="flex items-center justify-between px-4 py-3">
+                        <span className="text-[10px] uppercase tracking-widest text-ghana-gold">Command Center</span>
+                        <button onClick={logout} data-testid="admin-mobile-logout" className="inline-flex items-center gap-1 text-xs text-white/70"><LogOut size={12} /> Sign out</button>
+                    </div>
+                    <nav className="flex gap-1 overflow-x-auto px-2 pb-2">
+                        {NAV.map((n) => {
+                            const Icon = n.icon;
+                            return (
+                                <NavLink key={n.to} to={n.to} data-testid={`admin-mobile-nav-${n.label.toLowerCase()}`}
+                                    className={({ isActive }) => `shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs transition-colors ${isActive ? "bg-white/15 text-white" : "text-white/60"}`}>
+                                    <Icon size={13} /> {n.label}
+                                </NavLink>
+                            );
+                        })}
+                    </nav>
+                </div>
                 <Outlet />
             </main>
         </div>

@@ -110,3 +110,31 @@ def initiate_checkout(config: dict, amount: float, description: str, tracking_no
     except Exception as e:
         logger.error(f"Hubtel checkout failed: {e}")
         raise RuntimeError(f"Payment gateway error: {e}")
+
+
+
+HUBTEL_STATUS_URL = "https://api-txnstatus.hubtel.com/transactions/{pos}/status"
+
+
+def check_transaction_status(config: dict, client_reference: str) -> dict:
+    """Server-side Transaction Status Check. Returns Hubtel's `data` dict
+    (status ∈ Paid | Unpaid | Refunded). Raises RuntimeError on any failure."""
+    missing = missing_live_fields(config)
+    if missing:
+        raise HubtelNotConfiguredError(missing)
+    try:
+        resp = requests.get(
+            HUBTEL_STATUS_URL.format(pos=config["merchant_account_id"]),
+            params={"clientReference": client_reference},
+            auth=(config["api_id"], config["api_key"]),
+            proxies=_proxies_from(config),
+            timeout=(5, 20),
+        )
+        resp.raise_for_status()
+        body = resp.json()
+    except Exception as e:
+        raise RuntimeError(f"Hubtel status check failed: {str(e)[:200]}")
+    data = body.get("data") or {}
+    if body.get("responseCode") != "0000" or not data:
+        raise RuntimeError(f"Hubtel status check responseCode={body.get('responseCode')} message={body.get('message')}")
+    return data
