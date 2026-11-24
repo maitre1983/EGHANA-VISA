@@ -1917,13 +1917,18 @@ async def crypto_status(payment_id: str, request: Request):
 
     trusted_env = _is_preview_host(request) or not (doc.get("sandbox", True) or doc.get("simulated"))
     unverified_finish = doc.get("payment_status") == "finished" and (doc.get("verification") or {}).get("state") not in ("verified", "simulated")
+    if unverified_finish:
+        last = (doc.get("verification") or {}).get("checked_at") or ""
+        if last and (datetime.now(timezone.utc) - datetime.fromisoformat(last)).total_seconds() < 60:
+            unverified_finish = False
+            trusted_env = False
     # Best-effort refresh from NowPayments if still pending (polling fallback)
     if trusted_env and (unverified_finish or doc.get("payment_status") not in ("finished", "failed", "refunded", "expired")) and not doc.get("simulated"):
         s = await get_settings()
         cfg = s.get("nowpayments", {})
         if nowp.is_configured(cfg):
             try:
-                remote = nowp.get_payment(cfg, payment_id)
+                remote = await asyncio.to_thread(nowp.get_payment, cfg, payment_id)
                 np_status = remote.get("payment_status", doc["payment_status"])
                 if np_status != doc["payment_status"] or unverified_finish:
                     await _apply_crypto_status_update(payment_id, np_status, remote, ipn=False)
@@ -2122,7 +2127,12 @@ async def nowpayments_ipn(request: Request):
 
 @api.get("/admin/crypto-payments")
 async def admin_crypto_payments(ctx: dict = Depends(require_admin)):
-    return await db.crypto_payments.find({}, {"_id": 0}).sort("created_at", -1).limit(500).to_list(500)
+    docs = await db.crypto_payments.find({}, {"_id": 0}).sort("created_at", -1).limit(500).to_list(500)
+    for d in docs:
+        d["verification_state"] = (d.get("verification") or {}).get("state") or ("not_required" if d.get("payment_status") != "finished" else "pending")
+        if d.get("payment_status") == "finished" and d["verification_state"] not in ("verified", "simulated"):
+            d["display_status"] = f"finished_unverified ({d['verification_state']})"
+    return docs
 
 
 # ────────────────── ABENA CHAT + ESCALATION ──────────────────

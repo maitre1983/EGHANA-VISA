@@ -307,3 +307,9 @@ Build a full-stack Ghana Visa On Arrival web application for **eghanavisa.com** 
 - PROD settings: hubtel.sandbox=true, nowpayments.sandbox=true (admin must switch to live). 2 paid apps GH-2026-983566 / GH-2026-585565 paid via mock checkout (Visa card (Hubtel Sandbox), TX- mock ids, 0 hubtel_callbacks) -> to verify in Hubtel dashboard.
 - Tests: tests/test_payment_production_guards.py; stale tests fixed (iter15 renamed sandbox-preview test, iter14 self-seeding ticket fixture). iteration_24 100%.
 - NEXT: payments live switch by user, optional NOWPayments IPN re-verification hardening (needs auth), then ABENA step 1 (design /app/memory/ABENA_STEP1_DESIGN.md, decisions validated).
+
+## 2026-06 NOWPayments hardening + payment diagnostics (PREVIEW ONLY, not deployed — needs user authorization)
+- _verify_nowpayments_payment: API re-check (finished, payment_id, order_id, pay_currency, actually_paid>=99.5% of pay_amount, price usd) before paid; $ne paid filter; env mismatch rejected; crypto_status returns processing if unverified; 60s backoff.
+- POST /api/admin/payments/diagnostics (read-only) + Admin Monitoring card PaymentDiagnostics.jsx: egress IP, Hubtel creds/urls/status-API probe (403 = IP not whitelisted), reconciliation by tracking no, NOWPayments live/sandbox key validity.
+- Hubtel docs: status API requires IPv4 allowlist (max 4 IPs). Preview IP 35.193.209.116 gets 403.
+- Tests: tests/test_nowpayments_verification.py (8), test_iteration25_np_status_diagnostics.py, test_payment_guards_extended.py. iteration_25 100%.

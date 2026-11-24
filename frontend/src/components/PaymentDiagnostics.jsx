@@ -3,10 +3,21 @@ import api from "../lib/api";
 import { toast } from "sonner";
 import { Stethoscope } from "lucide-react";
 
+const fmt = (v) => {
+    if (v && typeof v === "object" && "http_status" in v) {
+        if (v.http_status === 403 && !v.responseCode) return "HTTP 403 – server IP not authorised by Hubtel";
+        if (v.http_status === 401) return "HTTP 401 – Hubtel credentials rejected";
+        if (v.http_status === null) return `No response – ${v.error || "network error"}`;
+        return `HTTP ${v.http_status} · ${v.responseCode || ""} ${v.message || ""}${v.data ? " · " + JSON.stringify(v.data) : ""}`;
+    }
+    if (v && typeof v === "object") return JSON.stringify(v, (k, x) => (x && typeof x === "object" && "http_status" in x ? fmt(x) : x));
+    return v === "" || v === null || v === undefined ? "—" : String(v);
+};
+
 const Line = ({ k, v, testid }) => (
     <div className="flex gap-3 text-sm py-1" data-testid={testid}>
         <span className="w-56 shrink-0 text-slate-500">{k}</span>
-        <span className="font-mono break-all">{typeof v === "object" ? JSON.stringify(v) : String(v ?? "—")}</span>
+        <span className="font-mono break-all">{fmt(v)}</span>
     </div>
 );
 
@@ -42,7 +53,9 @@ export const PaymentDiagnostics = () => {
                     <Line k="Public base URL" v={res.public_base_url} />
                     <Line k="Hubtel mode" v={h.mode} testid="diag-hubtel-mode" />
                     <Line k="Hubtel credentials" v={h.credentials_present} />
-                    <Line k="Callback / Return / Cancel URL" v={`${h.callback_url} | ${h.return_url} | ${h.cancellation_url}`} />
+                    <Line k="Callback URL" v={h.callback_url} />
+                    <Line k="Return URL" v={h.return_url} />
+                    <Line k="Cancellation URL" v={h.cancellation_url} />
                     <Line k="Hubtel status API probe" v={h.status_api_probe} testid="diag-hubtel-probe" />
                     {Object.entries(h.references || {}).map(([ref, r]) => <Line key={ref} k={`Reconcile ${ref}`} v={r} />)}
                     <Line k="NOWPayments mode" v={n.mode} testid="diag-np-mode" />

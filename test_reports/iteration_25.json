@@ -1,0 +1,35 @@
+{
+  "summary": "Tested the NOWPayments hardening and the read-only payment diagnostics. Results: the 8 NOWPayments verification unit tests pass, the 6 production guard tests pass, and the 14 extended guard tests pass. A new file with 7 tests passes: the crypto status endpoint never returns paid unless the payment is verified or simulated; an environment mismatch is rejected without calling the API; diagnostics returns 401 without a token; and the diagnostics response has the full expected shape and changes no application, crypto payment or setting (checked before and after in Mongo). In the UI, the Admin > Monitoring diagnostics card shows every expected field. The preview sandbox Hubtel flow (payment page > sandbox modal > success page) works. I did not call crypto initiate.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/payments/crypto/status/{id}", "issue": "nowp.get_payment is a synchronous call made inside an async route, so it blocks the event loop. _verify_nowpayments_payment correctly uses asyncio.to_thread. Also, a crypto doc that stays 'finished' but unverified or rejected triggers a NOWPayments API call plus re-verification on every poll; there is no backoff."},
+      {"endpoint": "_apply_crypto_status_update", "issue": "When verification is rejected, crypto_payments.payment_status is still set to 'finished'. The application is protected and internal_status maps to 'processing', but the admin crypto list will show 'finished' for a rejected payment. A separate 'verification_rejected' marker in the list would be clearer."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Admin Monitoring > Payment diagnostics", "issues": ["The Hubtel 403 probe shows the raw HTML body (\\r\\n<html>...) in the result lines. A short summary such as 'HTTP 403 – IP not whitelisted' would read better.", "Empty callback/return/cancel URLs show as '| |'. They should show '—'.", "The 'Hubtel payments awaiting verification' list on the same page still holds leftover TEST_Regression User entries (GH-2026-975874, GH-2026-883365) from earlier runs, marked 'Hubtel is set to PRODUCTION' even though the mode is sandbox."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iteration25_np_status_diagnostics.py", "/app/backend/tests/test_nowpayments_verification.py", "/app/backend/tests/test_payment_production_guards.py", "/app/backend/tests/test_payment_guards_extended.py", "/app/test_reports/pytest/iter25.xml"],
+  "action_items": [
+    "Optional: wrap nowp.get_payment in crypto_status with asyncio.to_thread",
+    "Optional: summarise the raw Hubtel 403 HTML in the diagnostics UI and show '—' for empty URLs",
+    "Info: preview Hubtel callback_url/return_url/cancellation_url settings are empty, and preview egress IP is 35.193.209.116 (Hubtel returns 403, IP not whitelisted, as expected). NOWPayments live key is valid and supports usdttrc20 and usdtbsc; no sandbox keys are set."
+  ],
+  "critical_code_review_comments": [
+    "Paid-only-on-verified holds. The application update is guarded by a payment_status $ne paid filter plus a modified_count==1 check before any email, so duplicate notifications cannot send emails twice.",
+    "A rejected or error verification writes payment_verification to the application only while it is not yet paid, so a paid application is never downgraded. Good.",
+    "The environment mismatch check runs before the API call. Verified with a test that confirms get_payment is never called.",
+    "The test_payment_production_guards.py tests need REACT_APP_BACKEND_URL exported in the shell; without it, collection fails with NoneType.rstrip."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration25_np_status_diagnostics.py"],
+  "success_rate": {"backend": "100% (35/35)", "frontend": "100%"},
+  "seed_data_creation": "Seeded TEST-I25-* applications and TESTI25* crypto_payments directly in Mongo, plus one UI application (GH-2026-603366, TEST_I25 UI User) via the API. All deleted by id afterwards. The status test for a finished but unverified payment made one real read-only GET to the NOWPayments API with a fake id; it returned 400 and was handled.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: export REACT_APP_BACKEND_URL=... before the guard tests. Also run: cd /app/backend && python -m pytest tests/test_nowpayments_verification.py tests/test_iteration25_np_status_diagnostics.py -q -n0 -p no:randomly. Never call crypto initiate on preview (NOWPayments is LIVE there). The diagnostics endpoint takes about 3-5s."
+}
