@@ -1,0 +1,35 @@
+{
+  "summary": "Tested the temporary production payment guards and the preview sandbox flow, plus an ABENA chat regression check. Backend: 20/20 pass. That is the 6 existing tests in test_payment_production_guards.py plus 14 new ones in test_payment_guards_extended.py. Requests sent to localhost:8001 with a non-preview Host header are refused. /payments/confirm returns 403. This held for the host variants eghanavisa.com, www., uppercase with :443, an empty Host, a lookalike suffix host (evil.preview.emergentagent.com.attacker.com) and the bare preview.emergentagent.com, and an X-Forwarded-Host spoof is ignored. /payments/initiate returns 503 with detail {code:'payments_suspended', message:readable}. A forged Hubtel success callback (nested Data shape and top-level shape) never sets paid, and a forged Failed callback does not set 'failed' either. crypto simulate-finish returns 403, and an IPN that is unsigned or has a bad signature returns 401. On the preview host (public URL, and the *.preview.emergentcf.cloud Host) the flow initiate 200 (sandbox:true, /payment/sandbox URL) -> confirm ok -> paid works; re-initiating after paid returns 400; confirm success=false sets failed. Regression: test_iteration15_final_regression + test_iteration16_hubtel_verification (chat test excluded) gave 22 passed, 1 skipped. Frontend on preview: the full Apply form (tourist eVisa, 4 file uploads, both checkboxes) -> /payment/:tracking -> Pay now -> payment-sandbox-modal -> sandbox-success -> /success/:tracking ('Payment received') works, with no page errors. Code review of Payment.jsx lines 30-40: the payments_suspended detail is an object, and the else branch shows detail.message, so the toast is readable, not [object Object]. ABENA chat (1 real message): reply rendered as Markdown with 3 <p>, 8 <li>, 4 <strong> and no literal **. Crypto initiate was NOT called on any host, as instructed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/payments/crypto/initiate", "issue": "The 503 suspension sends detail as a plain string, while Hubtel initiate sends a {code, message} object. Inconsistent, but the frontend handles both."},
+      {"endpoint": "tests/test_payment_production_guards.py", "issue": "It uses _create() from test_iteration15 but never the H fixture, so the TEST_ applications it creates (about 4 per run, name 'TEST_Regression User', email delivered@resend.dev) are never deleted. Add a cleanup fixture."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_payment_production_guards.py", "/app/backend/tests/test_payment_guards_extended.py", "/app/test_reports/pytest/iteration_24.xml"],
+  "action_items": [
+    "Optional hardening: the guard depends only on the request Host header. That is safe as long as the production ingress/Cloudflare never forwards a client-supplied *.preview.emergentagent.com / *.preview.emergentcf.cloud Host to the production backend. A tighter version would also check an env flag (e.g. an env var set only in preview) or PUBLIC_BASE_URL.",
+    "Add cleanup to test_payment_production_guards.py, which currently leaks TEST_ applications.",
+    "Make the crypto_initiate 503 detail match Hubtel's: {code:'payments_suspended', message}.",
+    "Permanent fix still needed: switch production Hubtel/NOWPayments to LIVE with real credentials. These guards are a temporary protection."
+  ],
+  "critical_code_review_comments": [
+    "_is_preview_host uses endswith on suffixes that start with a dot, so lookalike hosts and the bare suffix are correctly rejected (verified).",
+    "hubtel_webhook on a non-preview host always sends the callback to _verify_hubtel_payment. That calls check_transaction_status, which raises HubtelNotConfiguredError when live fields are missing, so a sandbox config can never verify as paid. Correct.",
+    "nowpayments_ipn on a non-preview host also refuses sandbox/simulated/unknown payment docs even when the signature is valid. Good defence in depth.",
+    "crypto_status skips polling for sandbox/simulated docs outside preview. Good.",
+    "server.py is about 2,900 lines and should be split into routers (payments, webhooks, chat, admin)."
+  ],
+  "updated_files": ["/app/backend/tests/test_payment_guards_extended.py"],
+  "success_rate": {"backend": "100% (20/20 guard tests + 22/22 regression)", "frontend": "100%"},
+  "seed_data_creation": "The new test file deletes its own TEST_ applications by tracking_no through the admin API. The UI-created application GH-2026-971233 was deleted (200). The applications created by test_payment_production_guards.py were not deleted, because there is no id list to delete by.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Simulate production with requests to http://localhost:8001 and header Host: eghanavisa.com. Never call crypto initiate on preview: NOWPayments is LIVE there and would create real invoices. The Apply UI needs file uploads: set_input_files on all input[type=file] (4) and select value tourist_evisa. The payment page loads config async; wait before checking payment-sandbox-banner. 1 ABENA chat call was used."
+}

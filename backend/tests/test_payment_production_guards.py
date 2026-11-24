@@ -4,7 +4,9 @@
 import os
 import sys
 import time
+import pytest
 import requests
+from pymongo import MongoClient
 
 sys.path.insert(0, os.path.dirname(__file__))
 from test_iteration15_final_regression import _create  # noqa: E402
@@ -12,6 +14,15 @@ from test_iteration15_final_regression import _create  # noqa: E402
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL").rstrip("/")
 LOCAL = "http://localhost:8001"
 PROD = {"Host": "eghanavisa.com"}
+
+
+@pytest.fixture(scope="module", autouse=True)
+def cleanup():
+    start = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
+    yield
+    env = dict(line.strip().split("=", 1) for line in open("/app/backend/.env") if "=" in line)
+    db = MongoClient(env["MONGO_URL"].strip('"'))[env["DB_NAME"].strip('"')]
+    db.applications.delete_many({"full_name": {"$regex": "^TEST_"}, "created_at": {"$gte": start}})
 
 
 def _status(trk):

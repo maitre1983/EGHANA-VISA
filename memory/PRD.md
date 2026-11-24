@@ -301,3 +301,9 @@ Build a full-stack Ghana Visa On Arrival web application for **eghanavisa.com** 
 - Hubtel prod egress IP observed 130.211.210.175 (not guaranteed static).
 
 ## 2026-06 Livrable A validated by user; regression run OK (deployment awaits explicit user authorization). Step 1 design: /app/memory/ABENA_STEP1_DESIGN.md (awaiting validation; steps 2-8 NOT started). Note: tests iteration15 forged-callback test is stale (preview Hubtel sandbox trusts callbacks by design); iteration14 ticket tests need seeded test-ticket-1 fixture.
+
+## 2026-06 Deploy #2 (Livrable A + temporary payment guard) — LIVE & verified
+- Guard: _is_preview_host (Host header endswith .preview.emergentagent.com/.preview.emergentcf.cloud). Outside preview: /payments/confirm 403, sandbox Hubtel checkout 503 payments_suspended, forged Hubtel callbacks only trigger Status API verification, crypto simulate 403, sandbox/simulated NOWPayments initiate 503 & IPN ignored.
+- PROD settings: hubtel.sandbox=true, nowpayments.sandbox=true (admin must switch to live). 2 paid apps GH-2026-983566 / GH-2026-585565 paid via mock checkout (Visa card (Hubtel Sandbox), TX- mock ids, 0 hubtel_callbacks) -> to verify in Hubtel dashboard.
+- Tests: tests/test_payment_production_guards.py; stale tests fixed (iter15 renamed sandbox-preview test, iter14 self-seeding ticket fixture). iteration_24 100%.
+- NEXT: payments live switch by user, optional NOWPayments IPN re-verification hardening (needs auth), then ABENA step 1 (design /app/memory/ABENA_STEP1_DESIGN.md, decisions validated).
