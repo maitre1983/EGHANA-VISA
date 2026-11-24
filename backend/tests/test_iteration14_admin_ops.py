@@ -42,6 +42,22 @@ EMPTY_SMS = {"enabled": False, "client_id": "", "client_secret": "", "sender_id"
 
 
 # ---- Support tickets ----
+@pytest.fixture(scope="module", autouse=True)
+def seed_ticket(mdb):
+    """Self-contained fixture: tests no longer depend on a pre-existing DB ticket."""
+    now = time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime())
+    mdb.support_tickets.update_one({"id": "test-ticket-1"}, {"$set": {
+        "id": "test-ticket-1", "session_id": "test-session-1", "status": "open", "priority": "normal",
+        "customer_name": "TEST Visitor", "customer_email": "test-visitor@example.com", "tracking_no": "",
+        "question": "TEST question", "ai_reply": "TEST reply", "created_at": now, "updated_at": now,
+        "admin_reply": None, "admin_replied_at": None}}, upsert=True)
+    mdb.chat_log.update_one({"id": "test-chat-1"}, {"$set": {
+        "id": "test-chat-1", "session_id": "test-session-1", "user_message": "TEST question",
+        "ai_reply": "TEST reply", "escalated": True, "ticket_id": "test-ticket-1", "created_at": now}}, upsert=True)
+    yield
+    mdb.support_tickets.delete_one({"id": "test-ticket-1"})
+    mdb.chat_log.delete_one({"id": "test-chat-1"})
+
 class TestTickets:
     def test_list_filters(self, H):
         r = requests.get(f"{BASE_URL}/api/admin/support-tickets", headers=H, timeout=30)

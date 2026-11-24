@@ -491,6 +491,15 @@ async def get_settings() -> dict:
     return doc or dict(DEFAULT_SETTINGS)
 
 
+PAYMENTS_SUSPENDED_MSG = "Online payment is temporarily unavailable while we complete a security check. Please try again shortly or contact our support team."
+
+
+def _is_preview_host(request: Request) -> bool:
+    """Sandbox/simulated payment flows are only honoured on the preview environment."""
+    host = (request.headers.get("host") or "").split(":")[0].strip().lower()
+    return host.endswith((".preview.emergentagent.com", ".preview.emergentcf.cloud"))
+
+
 def gen_tracking() -> str:
     year = datetime.now(timezone.utc).year
     return f"GH-{year}-{random.randint(100000, 999999)}"
@@ -697,7 +706,7 @@ class PayInit(BaseModel):
 
 
 @api.post("/payments/initiate")
-async def payment_initiate(payload: PayInit):
+async def payment_initiate(payload: PayInit, request: Request):
     app_doc = await db.applications.find_one({"tracking_no": payload.tracking_no}, {"_id": 0})
     if not app_doc:
         raise HTTPException(status_code=404, detail="Application not found")
@@ -706,6 +715,9 @@ async def payment_initiate(payload: PayInit):
 
     settings = await get_settings()
     hubtel_cfg = settings.get("hubtel", {})
+    if is_sandbox(hubtel_cfg) and not _is_preview_host(request):
+        logger.warning(f"Hubtel sandbox checkout refused outside preview for {payload.tracking_no}")
+        raise HTTPException(status_code=503, detail={"code": "payments_suspended", "message": PAYMENTS_SUSPENDED_MSG})
 
     # Currency conversion: platform prices in USD, Hubtel settles in GHS.
     # Only do the conversion for live production mode — sandbox skips it so
@@ -823,11 +835,14 @@ async def _mark_application_paid(app_doc: dict, payment_method: str) -> bool:
 
 
 @api.post("/payments/confirm")
-async def payment_confirm(payload: PayConfirm):
+async def payment_confirm(payload: PayConfirm, request: Request):
     """SANDBOX-only endpoint: allows the mock checkout page to mark an application
     as paid. Rejected when real Hubtel credentials are configured — production
     payments MUST flow through /api/webhooks/hubtel."""
     settings = await get_settings()
+    if not _is_preview_host(request):
+        logger.warning(f"Refused /payments/confirm outside preview for {payload.tracking_no}")
+        raise HTTPException(status_code=403, detail="Sandbox-only endpoint. Production uses the Hubtel webhook.")
     if not is_sandbox(settings.get("hubtel", {})):
         raise HTTPException(status_code=403, detail="Sandbox-only endpoint. Production uses the Hubtel webhook.")
 
@@ -931,8 +946,8 @@ async def hubtel_webhook(request: Request):
         logger.info(f"Hubtel callback checkoutId={checkout_id} vs stored tx={stored_tx} (mismatch, still processing)")
 
     hubtel_cfg = (await get_settings()).get("hubtel", {})
-    if not is_sandbox(hubtel_cfg):
-        # LIVE: a callback is only a trigger — the Hubtel Status API is the authority.
+    if not is_sandbox(hubtel_cfg) or not _is_preview_host(request):
+        # LIVE (or any non-preview host): a callback is only a trigger — the Hubtel Status API is the authority.
         if app_doc.get("payment_status") != "paid":
             asyncio.create_task(_verify_hubtel_payment(
                 client_ref, callback_success=_hubtel_success(data),
@@ -1705,12 +1720,15 @@ class CryptoInitIn(BaseModel):
 
 
 @api.post("/payments/crypto/initiate")
-async def crypto_initiate(payload: CryptoInitIn):
+async def crypto_initiate(payload: CryptoInitIn, request: Request):
     if payload.network not in nowp.CURRENCY_MAP:
         raise HTTPException(status_code=400, detail="Invalid network")
 
     s = await get_settings()
     cfg = s.get("nowpayments", {})
+    if (cfg.get("sandbox", True) or not nowp.is_configured(cfg)) and not _is_preview_host(request):
+        logger.warning(f"NowPayments sandbox/simulated payment refused outside preview for {payload.tracking_no}")
+        raise HTTPException(status_code=503, detail=PAYMENTS_SUSPENDED_MSG)
 
     # Verify method active in admin
     method_code = f"usdt_{payload.network}"
@@ -1804,8 +1822,10 @@ class SimulateFinishIn(BaseModel):
 
 
 @api.post("/payments/crypto/simulate-finish/{payment_id}")
-async def crypto_simulate_finish(payment_id: str, payload: SimulateFinishIn):
+async def crypto_simulate_finish(payment_id: str, payload: SimulateFinishIn, request: Request):
     """Simulate a NowPayments IPN 'finished' or 'failed' — sandbox helper only."""
+    if not _is_preview_host(request):
+        raise HTTPException(status_code=403, detail="Simulation is only available on the preview environment")
     doc = await db.crypto_payments.find_one({"payment_id": payment_id}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Unknown payment")
@@ -1825,13 +1845,14 @@ async def crypto_simulate_finish(payment_id: str, payload: SimulateFinishIn):
 
 
 @api.get("/payments/crypto/status/{payment_id}")
-async def crypto_status(payment_id: str):
+async def crypto_status(payment_id: str, request: Request):
     doc = await db.crypto_payments.find_one({"payment_id": payment_id}, {"_id": 0, "ipn_payloads": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Unknown crypto payment")
 
+    trusted_env = _is_preview_host(request) or not (doc.get("sandbox", True) or doc.get("simulated"))
     # Best-effort refresh from NowPayments if still pending (polling fallback)
-    if doc.get("payment_status") not in ("finished", "failed", "refunded", "expired") and not doc.get("simulated"):
+    if trusted_env and doc.get("payment_status") not in ("finished", "failed", "refunded", "expired") and not doc.get("simulated"):
         s = await get_settings()
         cfg = s.get("nowpayments", {})
         if nowp.is_configured(cfg):
@@ -1966,6 +1987,15 @@ async def nowpayments_ipn(request: Request):
     np_status = data.get("payment_status", "waiting")
     if not payment_id:
         return {"ok": True}
+    if not _is_preview_host(request):
+        pdoc = await db.crypto_payments.find_one({"payment_id": payment_id}, {"_id": 0, "sandbox": 1, "simulated": 1})
+        if cfg.get("sandbox", True) or not pdoc or pdoc.get("sandbox", True) or pdoc.get("simulated"):
+            logger.warning(f"NowPayments IPN ignored outside preview (sandbox/simulated/unknown) payment_id={payment_id}")
+            await db.crypto_ipn_rejections.insert_one({
+                "id": str(uuid.uuid4()), "created_at": now_iso(), "reason": "sandbox_or_unknown_outside_preview",
+                "sig": sig, "raw": raw.decode("utf-8", errors="replace")[:2000],
+            })
+            return {"ok": True}
     await _apply_crypto_status_update(payment_id, np_status, data, ipn=True)
     return {"ok": True}
 
