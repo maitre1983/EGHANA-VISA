@@ -1460,11 +1460,40 @@ class HubtelConfigIn(BaseModel):
     outbound_proxy_url: str = ""
 
 
+GATEWAY_SECRET_FIELDS = {
+    "hubtel": ("api_id", "api_key", "outbound_proxy_url"),
+    "nowpayments": ("api_key", "ipn_secret", "sandbox_api_key", "sandbox_ipn_secret"),
+}
+
+
+def _redact_gateway(section: str, cfg: dict) -> dict:
+    """Secrets are write-only: never returned, only a 'set' flag and a 4-char hint."""
+    out = dict(cfg or {})
+    for f in GATEWAY_SECRET_FIELDS[section]:
+        v = str(out.get(f) or "").strip()
+        out[f] = ""
+        out[f"{f}_set"] = bool(v)
+        out[f"{f}_hint"] = f"••••{v[-4:]}" if len(v) >= 8 else ("••••" if v else "")
+    return out
+
+
+async def _merge_gateway_secrets(section: str, new: dict) -> dict:
+    """Empty secret field on save = keep the stored value."""
+    current = (await get_settings()).get(section) or {}
+    for f in GATEWAY_SECRET_FIELDS[section]:
+        if not str(new.get(f) or "").strip():
+            new[f] = current.get(f, "")
+        else:
+            new[f] = str(new[f]).strip()
+    return new
+
+
 @api.post("/admin/settings/hubtel")
 async def admin_update_hubtel(payload: HubtelConfigIn, ctx: dict = Depends(require_admin)):
+    cfg = await _merge_gateway_secrets("hubtel", payload.model_dump())
     await db.settings.update_one(
         {"id": "singleton"},
-        {"$set": {"hubtel": payload.model_dump(), "updated_at": now_iso()}},
+        {"$set": {"hubtel": cfg, "updated_at": now_iso()}},
     )
     return {"ok": True}
 
@@ -1594,6 +1623,8 @@ async def admin_get_settings(ctx: dict = Depends(require_admin)):
     if isinstance(s.get("r2"), dict):
         s["r2"] = _redact_r2(s["r2"])
     s["sms"] = sms.redact(s.get("sms") or {})
+    s["hubtel"] = _redact_gateway("hubtel", s.get("hubtel") or {})
+    s["nowpayments"] = _redact_gateway("nowpayments", s.get("nowpayments") or {})
     return s
 
 
@@ -1673,9 +1704,10 @@ class NowPaymentsConfigIn(BaseModel):
 
 @api.post("/admin/settings/nowpayments")
 async def admin_update_nowpayments(payload: NowPaymentsConfigIn, ctx: dict = Depends(require_admin)):
+    cfg = await _merge_gateway_secrets("nowpayments", payload.model_dump())
     await db.settings.update_one(
         {"id": "singleton"},
-        {"$set": {"nowpayments": payload.model_dump(), "updated_at": now_iso()}},
+        {"$set": {"nowpayments": cfg, "updated_at": now_iso()}},
     )
     return {"ok": True}
 

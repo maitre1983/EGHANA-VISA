@@ -311,9 +311,21 @@ const ToggleRow = ({ active, disabled, onChange, testid }) => (
     </label>
 );
 
+const SecretInput = ({ label, value, onChange, isSet, hint, testid }) => (
+    <div>
+        <label className="text-xs uppercase tracking-wider text-slate-600 font-medium">{label} {isSet && <span className="normal-case tracking-normal text-emerald-700">(saved {hint} — leave empty to keep)</span>}</label>
+        <input type="password" autoComplete="new-password" value={value || ""} onChange={(e) => onChange(e.target.value)} data-testid={testid}
+            placeholder={isSet ? "••••••••••••" : "Not set"}
+            className="mt-1.5 w-full border border-black/10 rounded-md px-3 py-2.5 text-sm focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none" />
+    </div>
+);
+
+const HUBTEL_SECRETS = ["api_id", "api_key"];
+
 const HubtelForm = ({ initial, onSave }) => {
     const [f, setF] = useState(initial);
     const set = (k, v) => setF((old) => ({ ...old, [k]: v }));
+    const has = (k) => Boolean(String(f[k] || "").trim()) || (HUBTEL_SECRETS.includes(k) && initial[`${k}_set`]);
     const base = (process.env.REACT_APP_BACKEND_URL || window.location.origin).replace(/\/$/, "");
     const officialCallback = `${base}/api/webhooks/hubtel`;
     const officialReturn = `${base}/payment/return`;
@@ -327,11 +339,11 @@ const HubtelForm = ({ initial, onSave }) => {
             <div className="text-xs text-slate-500 -mt-2">Sandbox mode simulates payments. Turn off once real API keys are configured below.</div>
 
             {/* Explicit warning when admin has picked PRODUCTION but credentials are missing */}
-            {!f.sandbox && (["api_id", "api_key", "merchant_account_id"].some((k) => !String(f[k] || "").trim())) && (
+            {!f.sandbox && (["api_id", "api_key", "merchant_account_id"].some((k) => !has(k))) && (
                 <div className="bg-ghana-red/10 border border-ghana-red text-ghana-red rounded-md px-4 py-3 text-sm" data-testid="hubtel-missing-warning">
                     <div className="font-semibold">⚠ Production mode is ON but Hubtel credentials are incomplete</div>
                     <div className="mt-1 text-xs">
-                        Missing: <strong>{["api_id", "api_key", "merchant_account_id"].filter((k) => !String(f[k] || "").trim()).join(", ")}</strong>.
+                        Missing: <strong>{["api_id", "api_key", "merchant_account_id"].filter((k) => !has(k)).join(", ")}</strong>.
                         Card payments will return HTTP 503 to customers until these are filled in — no silent sandbox fallback.
                     </div>
                 </div>
@@ -367,13 +379,15 @@ const HubtelForm = ({ initial, onSave }) => {
                     ["callback_url", "Callback URL (paste from above)"],
                     ["return_url", "Return URL (paste from above)"],
                     ["cancellation_url", "Cancellation URL (paste from above)"],
-                ].map(([k, label]) => (
+                ].map(([k, label]) => (HUBTEL_SECRETS.includes(k) ? (
+                    <SecretInput key={k} label={label} value={f[k]} onChange={(v) => set(k, v)} isSet={initial[`${k}_set`]} hint={initial[`${k}_hint`]} testid={`hubtel-${k}`} />
+                ) : (
                     <div key={k}>
                         <label className="text-xs uppercase tracking-wider text-slate-600 font-medium">{label}</label>
                         <input value={f[k] || ""} onChange={(e) => set(k, e.target.value)} data-testid={`hubtel-${k}`}
                             className="mt-1.5 w-full border border-black/10 rounded-md px-3 py-2.5 text-sm focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none" />
                     </div>
-                ))}
+                )))}
             </div>
             <div className="flex gap-2 flex-wrap">
                 <button onClick={() => onSave(f)} data-testid="hubtel-save" className="bg-ghana-green text-white px-5 py-2.5 rounded-md text-sm font-medium inline-flex items-center gap-2 hover:bg-ghana-green-dark"><Save size={14} /> Save Hubtel</button>
@@ -393,18 +407,23 @@ const HubtelForm = ({ initial, onSave }) => {
 const NowPaymentsForm = ({ initial, onSave, onTest, discountPct, onSaveDiscount }) => {
     const [f, setF] = useState({
         sandbox: initial.sandbox ?? true,
-        api_key: initial.api_key || "",
-        ipn_secret: initial.ipn_secret || "",
-        sandbox_api_key: initial.sandbox_api_key || "",
-        sandbox_ipn_secret: initial.sandbox_ipn_secret || "",
+        api_key: "",
+        ipn_secret: "",
+        sandbox_api_key: "",
+        sandbox_ipn_secret: "",
     });
     const [pct, setPct] = useState(discountPct || 0);
     useEffect(() => { setPct(discountPct || 0); }, [discountPct]);
     const set = (k, v) => setF((old) => ({ ...old, [k]: v }));
     const callbackUrl = `${(process.env.REACT_APP_BACKEND_URL || "").replace(/\/$/, "")}/api/webhooks/nowpayments`;
+    const has = (k) => Boolean(f[k]) || Boolean(initial[`${k}_set`]);
     const configured = f.sandbox
-        ? (f.sandbox_api_key && f.sandbox_ipn_secret)
-        : (f.api_key && f.ipn_secret);
+        ? (has("sandbox_api_key") && has("sandbox_ipn_secret"))
+        : (has("api_key") && has("ipn_secret"));
+    const secret = (k, label) => (
+        <SecretInput label={label} value={f[k]} onChange={(v) => set(k, v)} isSet={initial[`${k}_set`]} hint={initial[`${k}_hint`]}
+            testid={{ sandbox_api_key: "np-sandbox-key", sandbox_ipn_secret: "np-sandbox-ipn", api_key: "np-prod-key", ipn_secret: "np-prod-ipn" }[k]} />
+    );
 
     return (
         <div className="bg-white rounded-xl border border-black/10 p-6 space-y-4">
@@ -432,23 +451,15 @@ const NowPaymentsForm = ({ initial, onSave, onTest, discountPct, onSaveDiscount 
             </div>
 
             <div className="grid md:grid-cols-2 gap-4 pt-4 border-t border-black/5">
-                <div>
+                <div className="space-y-3">
                     <div className="text-xs uppercase tracking-widest text-emerald-700 font-semibold mb-2">Sandbox credentials</div>
-                    <label className="text-xs uppercase tracking-wider text-slate-600 font-medium">Sandbox API Key</label>
-                    <input value={f.sandbox_api_key} onChange={(e) => set("sandbox_api_key", e.target.value)} data-testid="np-sandbox-key"
-                        className="mt-1.5 w-full border border-black/10 rounded-md px-3 py-2.5 text-sm focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none" />
-                    <label className="text-xs uppercase tracking-wider text-slate-600 font-medium mt-3 block">Sandbox IPN Secret</label>
-                    <input value={f.sandbox_ipn_secret} onChange={(e) => set("sandbox_ipn_secret", e.target.value)} data-testid="np-sandbox-ipn"
-                        className="mt-1.5 w-full border border-black/10 rounded-md px-3 py-2.5 text-sm focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none" />
+                    {secret("sandbox_api_key", "Sandbox API Key")}
+                    {secret("sandbox_ipn_secret", "Sandbox IPN Secret")}
                 </div>
-                <div>
+                <div className="space-y-3">
                     <div className="text-xs uppercase tracking-widest text-ghana-red font-semibold mb-2">Production credentials</div>
-                    <label className="text-xs uppercase tracking-wider text-slate-600 font-medium">Production API Key</label>
-                    <input value={f.api_key} onChange={(e) => set("api_key", e.target.value)} data-testid="np-prod-key"
-                        className="mt-1.5 w-full border border-black/10 rounded-md px-3 py-2.5 text-sm focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none" />
-                    <label className="text-xs uppercase tracking-wider text-slate-600 font-medium mt-3 block">Production IPN Secret</label>
-                    <input value={f.ipn_secret} onChange={(e) => set("ipn_secret", e.target.value)} data-testid="np-prod-ipn"
-                        className="mt-1.5 w-full border border-black/10 rounded-md px-3 py-2.5 text-sm focus:border-ghana-green focus:ring-1 focus:ring-ghana-green outline-none" />
+                    {secret("api_key", "Production API Key")}
+                    {secret("ipn_secret", "Production IPN Secret")}
                 </div>
             </div>
 

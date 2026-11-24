@@ -9,7 +9,7 @@ from auth_utils import decode_token
 
 logger = logging.getLogger(__name__)
 
-SENSITIVE = re.compile(r"(pass|secret|key|token)", re.I)
+SENSITIVE = re.compile(r"(pass|secret|key|token|api_id|proxy)", re.I)
 AUDITED_GET = re.compile(r"^/api/admin/(transactions\.(csv|xlsx)|applications/[^/]+/documents/)")
 
 
