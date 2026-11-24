@@ -32,7 +32,9 @@ from hubtel_service import (
     missing_live_fields as _hubtel_missing,
     HubtelNotConfiguredError,
     check_transaction_status,
+    status_probe as hubtel_status_probe,
 )
+import requests
 from fx_service import (
     convert_usd_to_ghs as _convert_usd_ghs,
     get_rate as _fx_get_rate,
@@ -1817,6 +1819,69 @@ async def crypto_initiate(payload: CryptoInitIn, request: Request):
     }
 
 
+class PaymentDiagnosticsIn(BaseModel):
+    tracking_nos: List[str] = []
+
+
+@api.post("/admin/payments/diagnostics")
+async def admin_payment_diagnostics(payload: PaymentDiagnosticsIn, ctx: dict = Depends(require_admin)):
+    """READ-ONLY: egress IP, Hubtel credentials/IP authorisation + reconciliation, NOWPayments key validity.
+    Never changes any application, payment or setting."""
+    s = await get_settings()
+    h_cfg = s.get("hubtel", {}) or {}
+    np_cfg = s.get("nowpayments", {}) or {}
+    proxies = {"http": h_cfg["outbound_proxy_url"], "https": h_cfg["outbound_proxy_url"]} if (h_cfg.get("outbound_proxy_url") or "").strip() else None
+
+    def _ip(px):
+        try:
+            return requests.get("https://api.ipify.org", proxies=px, timeout=10).text.strip()
+        except Exception as e:
+            return f"error: {str(e)[:120]}"
+
+    def _np(mode_sandbox: bool):
+        cfg = {**np_cfg, "sandbox": mode_sandbox}
+        res = {"keys_present": nowp.is_configured(cfg)}
+        if not res["keys_present"]:
+            return res
+        try:
+            cur = nowp.get_currencies(cfg)
+            res.update(api_key_valid=True, usdttrc20=("usdttrc20" in cur), usdtbsc=("usdtbsc" in cur))
+        except Exception as e:
+            res.update(api_key_valid=False, error=str(e)[:200])
+        return res
+
+    refs = [t.strip() for t in payload.tracking_nos if t.strip()][:5]
+    hubtel_refs = {}
+    for ref in refs:
+        local = await db.applications.find_one({"tracking_no": ref}, {"_id": 0, "payment_status": 1, "payment_method": 1,
+                                                                    "amount_usd": 1, "amount_charged": 1, "payment_currency": 1,
+                                                                    "payment_transaction_id": 1, "paid_at": 1})
+        callbacks = await db.hubtel_callbacks.count_documents({"client_reference": ref})
+        hubtel_refs[ref] = {"local": local, "callbacks_received": callbacks,
+                            "hubtel_status_api": await asyncio.to_thread(hubtel_status_probe, h_cfg, ref)}
+    return {
+        "checked_at": now_iso(),
+        "egress_ip": await asyncio.to_thread(_ip, None),
+        "egress_ip_via_hubtel_proxy": await asyncio.to_thread(_ip, proxies) if proxies else None,
+        "public_base_url": os.environ.get("PUBLIC_BASE_URL", ""),
+        "hubtel": {
+            "mode": "sandbox" if is_sandbox(h_cfg) else "live",
+            "credentials_present": {f: bool(str(h_cfg.get(f) or "").strip()) for f in ("api_id", "api_key", "merchant_account_id")},
+            "callback_url": h_cfg.get("callback_url", ""),
+            "return_url": h_cfg.get("return_url", ""),
+            "cancellation_url": h_cfg.get("cancellation_url", ""),
+            "status_api_probe": await asyncio.to_thread(hubtel_status_probe, h_cfg, "DIAG-PROBE-0000"),
+            "references": hubtel_refs,
+        },
+        "nowpayments": {
+            "mode": "sandbox" if np_cfg.get("sandbox", True) else "live",
+            "ipn_url": f"{os.environ.get('PUBLIC_BASE_URL', '').rstrip('/')}/api/webhooks/nowpayments",
+            "live_keys": await asyncio.to_thread(_np, False),
+            "sandbox_keys": await asyncio.to_thread(_np, True),
+        },
+    }
+
+
 class SimulateFinishIn(BaseModel):
     success: bool = True
 
@@ -1851,26 +1916,29 @@ async def crypto_status(payment_id: str, request: Request):
         raise HTTPException(status_code=404, detail="Unknown crypto payment")
 
     trusted_env = _is_preview_host(request) or not (doc.get("sandbox", True) or doc.get("simulated"))
+    unverified_finish = doc.get("payment_status") == "finished" and (doc.get("verification") or {}).get("state") not in ("verified", "simulated")
     # Best-effort refresh from NowPayments if still pending (polling fallback)
-    if trusted_env and doc.get("payment_status") not in ("finished", "failed", "refunded", "expired") and not doc.get("simulated"):
+    if trusted_env and (unverified_finish or doc.get("payment_status") not in ("finished", "failed", "refunded", "expired")) and not doc.get("simulated"):
         s = await get_settings()
         cfg = s.get("nowpayments", {})
         if nowp.is_configured(cfg):
             try:
                 remote = nowp.get_payment(cfg, payment_id)
                 np_status = remote.get("payment_status", doc["payment_status"])
-                if np_status != doc["payment_status"]:
+                if np_status != doc["payment_status"] or unverified_finish:
                     await _apply_crypto_status_update(payment_id, np_status, remote, ipn=False)
-                    doc["payment_status"] = np_status
-                    doc["actually_paid"] = remote.get("actually_paid")
+                    doc = await db.crypto_payments.find_one({"payment_id": payment_id}, {"_id": 0, "ipn_payloads": 0})
             except Exception as e:
                 logger.warning(f"NowPayments polling failed: {e}")
 
+    internal = nowp.map_status(doc["payment_status"])
+    if internal == "paid" and (doc.get("verification") or {}).get("state") not in ("verified", "simulated"):
+        internal = "processing"
     return {
         "payment_id": doc["payment_id"],
         "tracking_no": doc["tracking_no"],
         "payment_status": doc["payment_status"],
-        "internal_status": nowp.map_status(doc["payment_status"]),
+        "internal_status": internal,
         "pay_address": doc["pay_address"],
         "pay_amount": doc["pay_amount"],
         "pay_currency": doc["pay_currency"],
@@ -1879,12 +1947,52 @@ async def crypto_status(payment_id: str, request: Request):
     }
 
 
+async def _verify_nowpayments_payment(doc: dict) -> dict:
+    """Authoritative check against the NOWPayments API before any 'paid' status.
+    Returns {"state": verified|rejected|error|simulated, ...}."""
+    ver = {"provider": "nowpayments", "checked_at": now_iso(), "reasons": []}
+    if doc.get("simulated"):
+        return {**ver, "state": "simulated"}
+    cfg = (await get_settings()).get("nowpayments", {})
+    if bool(cfg.get("sandbox", True)) != bool(doc.get("sandbox", True)):
+        return {**ver, "state": "rejected", "reasons": ["environment_mismatch"]}
+    try:
+        remote = await asyncio.to_thread(nowp.get_payment, cfg, doc["payment_id"])
+    except Exception as e:
+        return {**ver, "state": "error", "reasons": [f"api_error: {str(e)[:200]}"]}
+
+    def _f(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return 0.0
+
+    expected_crypto = _f(doc.get("pay_amount"))
+    paid_crypto = _f(remote.get("actually_paid"))
+    checks = {
+        "final_status": str(remote.get("payment_status", "")).lower() == "finished",
+        "payment_id": str(remote.get("payment_id", "")) == str(doc["payment_id"]),
+        "order_id": str(remote.get("order_id", "")) == str(doc["tracking_no"]),
+        "currency_network": str(remote.get("pay_currency", "")).lower() == str(doc.get("pay_currency", "")).lower(),
+        "amount_received": expected_crypto > 0 and paid_crypto >= expected_crypto * 0.995,
+        "price_usd": str(remote.get("price_currency", "")).lower() == "usd"
+                     and abs(_f(remote.get("price_amount")) - _f(doc.get("price_amount_usd"))) <= 0.01,
+    }
+    ver["reasons"] = [k for k, ok in checks.items() if not ok]
+    ver["state"] = "verified" if not ver["reasons"] else "rejected"
+    ver["nowpayments"] = {k: remote.get(k) for k in (
+        "payment_id", "payment_status", "order_id", "pay_currency", "pay_amount",
+        "actually_paid", "price_amount", "price_currency", "outcome_amount", "updated_at")}
+    return ver
+
+
 async def _apply_crypto_status_update(payment_id: str, np_status: str, payload: dict, ipn: bool):
     """Idempotently update crypto_payments + trigger visa confirmation on 'finished'."""
     doc = await db.crypto_payments.find_one({"payment_id": payment_id}, {"_id": 0})
     if not doc:
         return
-    if doc.get("payment_status") == np_status and not ipn:
+    pending_verification = np_status == "finished" and (doc.get("verification") or {}).get("state") not in ("verified", "simulated")
+    if doc.get("payment_status") == np_status and not ipn and not pending_verification:
         return
     update = {
         "payment_status": np_status,
@@ -1897,20 +2005,32 @@ async def _apply_crypto_status_update(payment_id: str, np_status: str, payload: 
         {"$set": update, **push_ipn},
     )
 
-    # On finished: mark application paid (idempotent) and send confirmation email
+    # On finished: verify with NOWPayments, then mark application paid (idempotent) and send confirmation email
     if np_status == "finished":
+        ver = await _verify_nowpayments_payment(doc)
+        await db.crypto_payments.update_one({"payment_id": payment_id}, {"$set": {"verification": ver}})
+        if ver["state"] not in ("verified", "simulated"):
+            logger.warning(f"NOWPayments verification {ver['state']} for {payment_id}: {ver['reasons']}")
+            await db.applications.update_one(
+                {"tracking_no": doc["tracking_no"], "payment_status": {"$ne": "paid"}},
+                {"$set": {"payment_verification": ver, "updated_at": now_iso()}},
+            )
+            return
         app_doc = await db.applications.find_one({"tracking_no": doc["tracking_no"]}, {"_id": 0})
         if app_doc and app_doc.get("payment_status") != "paid":
-            await db.applications.update_one(
-                {"tracking_no": app_doc["tracking_no"]},
+            res = await db.applications.update_one(
+                {"tracking_no": app_doc["tracking_no"], "payment_status": {"$ne": "paid"}},
                 {"$set": {
                     "payment_status": "paid",
                     "status": "submitted",
                     "paid_at": now_iso(),
                     "payment_method": f"usdt_{doc['network']}",
+                    "payment_verification": ver,
                     "updated_at": now_iso(),
                 }},
             )
+            if res.modified_count != 1:
+                return
             processing_label = "Express (48–72h)" if app_doc["processing"] == "express" else "Regular"
             await email_svc.send(
                 recipient=app_doc["email"],

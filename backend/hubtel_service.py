@@ -116,6 +116,29 @@ def initiate_checkout(config: dict, amount: float, description: str, tracking_no
 HUBTEL_STATUS_URL = "https://api-txnstatus.hubtel.com/transactions/{pos}/status"
 
 
+def status_probe(config: dict, client_reference: str) -> dict:
+    """Read-only diagnostic: raw Transaction Status API answer (never changes any state)."""
+    try:
+        resp = requests.get(
+            HUBTEL_STATUS_URL.format(pos=config.get("merchant_account_id") or "-"),
+            params={"clientReference": client_reference},
+            auth=(config.get("api_id") or "", config.get("api_key") or ""),
+            proxies=_proxies_from(config),
+            timeout=(5, 20),
+        )
+    except Exception as e:
+        return {"http_status": None, "error": str(e)[:200]}
+    out = {"http_status": resp.status_code}
+    try:
+        body = resp.json()
+        data = body.get("data") or {}
+        out.update(responseCode=body.get("responseCode"), message=body.get("message"),
+                   data={k: data.get(k) for k in ("status", "amount", "currency", "date", "transactionId", "clientReference", "paymentMethod")} if data else None)
+    except Exception:
+        out["body"] = resp.text[:200]
+    return out
+
+
 def check_transaction_status(config: dict, client_reference: str) -> dict:
     """Server-side Transaction Status Check. Returns Hubtel's `data` dict
     (status ∈ Paid | Unpaid | Refunded). Raises RuntimeError on any failure."""

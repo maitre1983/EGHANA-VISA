@@ -3,6 +3,7 @@ import api from "../lib/api";
 import { toast } from "sonner";
 import { RefreshCw, Activity, CheckCircle2, XCircle, CreditCard, Bitcoin, MessageSquareText } from "lucide-react";
 import { fmtDateTime, PageHeader } from "../lib/adminUi";
+import { PaymentDiagnostics } from "../components/PaymentDiagnostics";
 
 const META = {
     hubtel: { label: "Hubtel — card payments", icon: CreditCard },
@@ -45,6 +46,7 @@ export default function AdminHealth() {
                 <Stat label="Last confirmed payment" value={data.last_paid ? fmtDateTime(data.last_paid.paid_at) : "—"} sub={data.last_paid?.tracking_no} testid="health-last-paid" small />
             </div>
             <PendingVerifications />
+            <PaymentDiagnostics />
             <History history={data.history} />
         </div>
     );
