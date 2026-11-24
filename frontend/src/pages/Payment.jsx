@@ -4,6 +4,7 @@ import { CreditCard, Bitcoin, ShieldCheck, CheckCircle2, Loader2, Copy, Clock } 
 import { toast } from "sonner";
 import api from "../lib/api";
 import { log } from "../lib/log";
+import { IndependenceNotice } from "../components/IndependenceNotice";
 import { trackEvent } from "../lib/analytics";
 
 export default function Payment() {
@@ -87,6 +88,7 @@ export default function Payment() {
             <div className="text-xs uppercase tracking-[0.25em] text-ghana-green font-semibold">Payment</div>
             <h1 className="mt-2 text-3xl md:text-4xl font-heading font-bold">Complete your payment</h1>
             <p className="mt-3 text-slate-600">Tracking number: <span className="font-heading font-semibold" data-testid="payment-tracking">{tracking}</span></p>
+            <IndependenceNotice testid="payment-independence-notice" className="mt-6" />
 
             {config?.hubtel_sandbox && (
                 <div className="mt-6 bg-ghana-gold/20 border border-ghana-gold text-ghana-black rounded-md px-4 py-3 text-sm flex items-center gap-2" data-testid="payment-sandbox-banner">

@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Upload, CheckCircle2, AlertTriangle, FileText } from "lucide-react";
 import api from "../lib/api";
 import VisaSample from "../components/VisaSample";
+import { IndependenceNotice } from "../components/IndependenceNotice";
 import { toast } from "sonner";
 
 const DOC_TYPES = [
@@ -290,6 +291,8 @@ export default function Apply() {
                             <span className="text-sm text-slate-700">I acknowledge the departure date compliance warning and accept full responsibility.</span>
                         </label>
                     </div>
+
+                    <IndependenceNotice testid="apply-independence-notice" />
 
                     <button
                         onClick={submit}

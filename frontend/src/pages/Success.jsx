@@ -2,6 +2,7 @@ import React from "react";
 import { Link, useParams } from "react-router-dom";
 import { CheckCircle2, Copy } from "lucide-react";
 import { toast } from "sonner";
+import { IndependenceNotice } from "../components/IndependenceNotice";
 
 export default function Success() {
     const { tracking } = useParams();
@@ -24,6 +25,8 @@ export default function Success() {
                     </div>
                     <p className="mt-3 text-xs text-slate-500">A confirmation email has been sent to your address. Save this number for future reference.</p>
                 </div>
+
+                <IndependenceNotice testid="success-independence-notice" className="mt-6" />
 
                 <div className="mt-8 flex flex-col sm:flex-row justify-center gap-3">
                     <Link to={`/track?number=${tracking}`} data-testid="success-track" className="bg-ghana-black text-white px-6 py-3 rounded-md text-sm font-medium hover:bg-ghana-black/90 transition-colors">Track my application</Link>
