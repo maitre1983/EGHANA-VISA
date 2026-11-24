@@ -313,3 +313,8 @@ Build a full-stack Ghana Visa On Arrival web application for **eghanavisa.com** 
 - POST /api/admin/payments/diagnostics (read-only) + Admin Monitoring card PaymentDiagnostics.jsx: egress IP, Hubtel creds/urls/status-API probe (403 = IP not whitelisted), reconciliation by tracking no, NOWPayments live/sandbox key validity.
 - Hubtel docs: status API requires IPv4 allowlist (max 4 IPs). Preview IP 35.193.209.116 gets 403.
 - Tests: tests/test_nowpayments_verification.py (8), test_iteration25_np_status_diagnostics.py, test_payment_guards_extended.py. iteration_25 100%.
+
+## 2026-06 Secrets masking (PREVIEW, not deployed)
+- GET /api/admin/settings: hubtel api_id/api_key/outbound_proxy_url and nowpayments 4 keys returned empty + *_set/*_hint; saves with empty secret keep stored value. Audit SENSITIVE regex += api_id|proxy. AdminSettings SecretInput (password), proxy URL field, Sandbox toggle labels. iteration_26 100%.
+- PROD state (deployer read-only): hubtel.sandbox=false, nowpayments.sandbox=false, creds present, URLs eghanavisa.com/{api/webhooks/hubtel,payment/return,payment/cancelled}. Egress IP CHANGED 130.211.210.175 -> 34.41.192.254 (not static) => use static outbound proxy for Hubtel allowlist.
+- Pending deploy authorization: NOWPayments API verification + payment diagnostics + secrets masking.

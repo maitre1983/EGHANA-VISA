@@ -301,8 +301,9 @@ const SelectRow = ({ initial, options, onSave, testid }) => {
     );
 };
 
-const ToggleRow = ({ active, disabled, onChange, testid }) => (
+const ToggleRow = ({ active, disabled, onChange, testid, label }) => (
     <label className={`inline-flex items-center gap-3 ${disabled ? "opacity-60" : "cursor-pointer"}`}>
+        {label && <span className="text-sm font-semibold text-slate-700">{label}</span>}
         <span className={`relative w-11 h-6 rounded-full transition-colors ${active ? "bg-ghana-green" : "bg-slate-300"}`}>
             <span className={`absolute top-0.5 ${active ? "left-5" : "left-0.5"} w-5 h-5 bg-white rounded-full transition-all`} />
         </span>
@@ -320,7 +321,7 @@ const SecretInput = ({ label, value, onChange, isSet, hint, testid }) => (
     </div>
 );
 
-const HUBTEL_SECRETS = ["api_id", "api_key"];
+const HUBTEL_SECRETS = ["api_id", "api_key", "outbound_proxy_url"];
 
 const HubtelForm = ({ initial, onSave }) => {
     const [f, setF] = useState(initial);
@@ -335,7 +336,7 @@ const HubtelForm = ({ initial, onSave }) => {
     return (
         <div className="bg-white rounded-xl border border-black/10 p-6 space-y-4">
             <div className="font-heading font-semibold">Hubtel Configuration</div>
-            <ToggleRow active={f.sandbox} onChange={(v) => set("sandbox", v)} testid="hubtel-sandbox" />
+            <ToggleRow label="Sandbox (test) mode" active={f.sandbox} onChange={(v) => set("sandbox", v)} testid="hubtel-sandbox" />
             <div className="text-xs text-slate-500 -mt-2">Sandbox mode simulates payments. Turn off once real API keys are configured below.</div>
 
             {/* Explicit warning when admin has picked PRODUCTION but credentials are missing */}
@@ -379,6 +380,7 @@ const HubtelForm = ({ initial, onSave }) => {
                     ["callback_url", "Callback URL (paste from above)"],
                     ["return_url", "Return URL (paste from above)"],
                     ["cancellation_url", "Cancellation URL (paste from above)"],
+                    ["outbound_proxy_url", "Static-IP outbound proxy URL (optional)"],
                 ].map(([k, label]) => (HUBTEL_SECRETS.includes(k) ? (
                     <SecretInput key={k} label={label} value={f[k]} onChange={(v) => set(k, v)} isSet={initial[`${k}_set`]} hint={initial[`${k}_hint`]} testid={`hubtel-${k}`} />
                 ) : (
@@ -437,7 +439,7 @@ const NowPaymentsForm = ({ initial, onSave, onTest, discountPct, onSaveDiscount 
                 )}
             </div>
 
-            <ToggleRow active={f.sandbox} onChange={(v) => set("sandbox", v)} testid="np-sandbox" />
+            <ToggleRow label="Sandbox (test) mode" active={f.sandbox} onChange={(v) => set("sandbox", v)} testid="np-sandbox" />
             <div className="text-xs text-slate-500 -mt-2">Sandbox uses <span className="font-mono">api-sandbox.nowpayments.io</span>. Production uses <span className="font-mono">api.nowpayments.io</span>.</div>
 
             <div className="border-t border-black/5 pt-4">

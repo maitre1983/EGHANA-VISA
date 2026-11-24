@@ -1,0 +1,34 @@
+{
+  "summary": "Tested masking of payment gateway secrets (Hubtel and NOWPayments) end to end, on the backend and the frontend. Before any write, settings.nowpayments and settings.hubtel were backed up from Mongo. The test fixture restored them at the end and a direct Mongo comparison confirmed they match exactly (only settings.updated_at changed). GET /api/admin/settings returns every secret as an empty string with *_set and *_hint fields (np api_key hint '••••8461', last 4 characters only). Non-secret fields are still returned, and no raw secret appears anywhere in the response. A NOWPayments save with empty or whitespace-only secrets keeps the stored values. A new value replaces only that field and is trimmed. Hubtel works the same way for api_id, api_key and outbound_proxy_url. Audit-log entries show '***' for api_id, api_key, outbound_proxy_url and sandbox_api_key. No raw secret or TEST value was found in the audit collection or in the backend supervisor logs. In the UI, all 4 NOWPayments inputs and the 2 Hubtel inputs are type=password and empty. Saved fields show placeholder dots and the label '(saved ••••xxxx — leave empty to keep)'. np-required-badge is hidden (production keys saved, sandbox off). Clicking np-save without typing sent empty secrets, the keys were kept, and np-test then returned 200 with the toast 'Connection OK · production · TRC20:✓ · BEP20:✓'. The Monitoring Payment diagnostics card works and shows only booleans and modes, no secret values. Regression: test_payment_production_guards.py and test_nowpayments_verification.py all pass. Sandbox toggles were not touched and /payments/crypto/initiate was not called.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "tests/test_iteration25_np_status_diagnostics.py::test_verify_environment_mismatch_rejected", "issue": "Failed once when run in the same pytest session as the guard and verification files, then passed on its own. This looks like an in-process asyncio loop or motor client conflict in the test file (it uses new_event_loop with server imported), not an app bug. Flaky."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/admin/settings Hubtel and NowPayments", "issues": ["The Sandbox toggle shows 'Active'/'Inactive' with no 'Sandbox' label next to it, so it is unclear what the toggle controls (pre-existing).", "The Hubtel outbound_proxy_url has no input in the UI, so admins cannot set or change it from Settings (the backend supports it)."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iteration26_gateway_secret_masking.py", "/app/test_reports/pytest/iter26_masking.xml", "/app/test_reports/pytest/iter26_regression.xml"],
+  "action_items": [
+    "Optional: give admins a way to clear a stored secret. Today an empty input always means 'keep', so a key cannot be removed from the UI.",
+    "Optional: clear the NowPaymentsForm and HubtelForm secret inputs after a successful save. The typed value currently stays in React state and in the password field.",
+    "Optional: add a SecretInput for Hubtel outbound_proxy_url if admins should manage it from the UI."
+  ],
+  "critical_code_review_comments": [
+    "_merge_gateway_secrets and _redact_gateway are correct: empty or whitespace keeps the stored value, a new value is stripped, and the hint shows the last 4 characters only for values of 8 or more characters ('••••' for shorter ones).",
+    "HubtelForm posts the whole initial object, including the *_set and *_hint keys. Pydantic ignores the extra keys, so this is harmless, but the payload is noisy.",
+    "audit_service SENSITIVE regex (pass|secret|key|token|api_id|proxy) correctly masks the gateway fields. Empty values are logged as '' (no leak).",
+    "In the diagnostics endpoint, _ip() returns str(e)[:120] from requests through the outbound proxy. If a ProxyError string ever includes the proxy URL, user:pass could reach the admin UI. Consider removing the credentials from error strings."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration26_gateway_secret_masking.py"],
+  "success_rate": {"backend": "100% (12/12 new tests; 20/20 for the requested regression files)", "frontend": "100%"},
+  "seed_data_creation": "None kept. TEST_ Hubtel secrets and a TEST sandbox_api_key were written temporarily, then settings.hubtel and settings.nowpayments were restored exactly from the Mongo backup (verified equal). The temporary backup file in /tmp was deleted.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Run: export REACT_APP_BACKEND_URL=<frontend/.env value>; cd /app/backend && python -m pytest tests/test_iteration26_gateway_secret_masking.py tests/test_payment_production_guards.py tests/test_nowpayments_verification.py -n0 -p no:randomly. The iter26 test backs up and restores settings.nowpayments and settings.hubtel itself (module fixture). Preview NOWPayments keys are LIVE (sandbox=false): never call crypto/initiate on preview. Run iteration25 tests on their own to avoid the event-loop flake."
+}
