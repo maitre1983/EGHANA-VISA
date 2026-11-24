@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { Link, useParams } from "react-router-dom";
 import { CheckCircle2, Copy } from "lucide-react";
 import { toast } from "sonner";
@@ -7,6 +7,7 @@ import { IndependenceNotice } from "../components/IndependenceNotice";
 export default function Success() {
     const { tracking } = useParams();
     const copy = () => { navigator.clipboard.writeText(tracking); toast.success("Copied!"); };
+    useEffect(() => { window.scrollTo(0, 0); }, []);
 
     return (
         <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-20">

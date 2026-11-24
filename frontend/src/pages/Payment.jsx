@@ -18,7 +18,7 @@ export default function Payment() {
 
     // Fetch site config once on mount — no deps intentionally
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    useEffect(() => { api.get("/config").then(({ data }) => setConfig(data)); }, []);
+    useEffect(() => { window.scrollTo(0, 0); api.get("/config").then(({ data }) => setConfig(data)); }, []);
     // Cleanup poll interval on unmount
     // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
