@@ -1,0 +1,29 @@
+{
+  "summary": "Frontend-only test of ABENA chat widget presentation on PREVIEW (3 real /api/chat calls). All requested features PASS: EN welcome (en-US) and FR welcome (fr-FR) match spec exactly, contain no price/delay, and **ABENA** renders as <strong> (no literal **). FR multi-question reply rendered as Markdown: 3 <p>, 1 <ul> with 5 <li>, no literal '**' or '- ' bullets, internal links /track and /prices rendered as <a> (no target). Prices/delays question on mobile returned 2 lists + 7 <strong> + /apply link. Clicking internal link navigated via react-router (window marker preserved = no full reload), chat window stayed open and input usable. Mobile 390x844: window x=8,w=374 (inset-x-2), bottom 764 < launcher top 770 so no overlap; elementFromPoint at input/send centers hits the input/send themselves (not blocked by WhatsApp button); no horizontal overflow; messages list scrolls (scrollTop changes); close works. Escalation 'Je veux parler à un humain' -> abena-escalated-badge 'TRANSMIS À UN CONSEILLER · TICKET 5AC19AC4' + abena-contact-form with name/email/done; OK hides form. Desktop 1920x800 home and /apply render normally, no page errors.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Escalation contact form", "issue": "Name/email entered in abena-contact-form are only sent with the NEXT /api/chat message; clicking 'OK' just hides the form. If the visitor fills email and leaves, the already-created ticket never receives the contact email.", "affected_selectors": ["abena-contact-done", "abena-contact-email"]}
+    ],
+    "design_issues": [
+      {"screen": "ABENA mobile", "issues": ["Minor: window max-h 600px leaves ~160px empty band above window on 844px screens (fine, cosmetic).", "Flag emoji 🇬🇭 renders as letters 'GH' on Windows desktops (OS limitation, cosmetic)."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Optional: on abena-contact-done, PATCH/POST contact name/email to the existing escalated ticket (or send immediately) so email isn't lost if user sends no further message."
+  ],
+  "critical_code_review_comments": [
+    "AbenaMessage.jsx: skipHtml set, img/hr dropped, links whitelisted (relative '/' but not '//' -> Link; https/mailto/tel -> new tab with noopener; anything else incl. javascript: -> plain <span>). XSS-safe by review.",
+    "abenaLang(): html lang 'en' falls back to navigator.language -> works; if site later sets <html lang> from a language switcher it will take precedence as intended.",
+    "AbenaChat.jsx scroll effect runs on [messages, open, busy]; scrollIntoView smooth on latest AI reply works. No issues.",
+    "Content note (not presentation): AI reply stated 'nous n'acceptons actuellement pas les cartes Visa ... USDT (TRC20 et BEP20)' — confirm this matches current admin payment settings (payments not touched in this test)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A", "frontend": "100%"},
+  "seed_data_creation": "Escalation test created one support ticket/chat session in preview DB (ticket id prefix 5ac19ac4, contact not submitted). No other data created.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Use browser.new_context(locale='fr-FR') for FR welcome. Cookie banner: click 'Reject non-essential'. Chat calls are real Claude; 3 used this run. Screenshots in /app/.screenshots (mobile_fr.jpg, m_reply.jpg, m_esc.jpg)."
+}

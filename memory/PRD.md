@@ -294,3 +294,8 @@ Build a full-stack Ghana Visa On Arrival web application for **eghanavisa.com** 
 
 ## 2026-06 Fork check
 - Verified all 5 lots, admin features (SMS, health, audit, tickets), Hubtel server-side verification and independence notices retained in fork. Preview OK. Awaiting user UI deploy (Replace existing deployment), then non-destructive production smoke test.
+
+## 2026-06 ABENA Livrable A (preview, not deployed)
+- Markdown rendering (react-markdown, skipHtml, safe links via react-router), FR/EN welcome per browser language, mobile-friendly window, prompt STYLE section (short, lists, internal links, no self-intro). Tested iteration_23 (100%).
+- Livrable B audit written: /app/memory/ABENA_AUDIT.md — awaiting user validation before any dev.
+- Hubtel prod egress IP observed 130.211.210.175 (not guaranteed static).
