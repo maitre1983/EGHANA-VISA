@@ -6,7 +6,7 @@ import uuid
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://ghana-visa-app.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://ghana-eta-hub--8jwgo6s2.preview.emergentagent.com").rstrip("/")
 ADMIN_EMAIL = "admin@eghanavisa.com"
 ADMIN_PASS = "Admin@2026"
 
