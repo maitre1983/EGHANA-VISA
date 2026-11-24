@@ -299,3 +299,5 @@ Build a full-stack Ghana Visa On Arrival web application for **eghanavisa.com** 
 - Markdown rendering (react-markdown, skipHtml, safe links via react-router), FR/EN welcome per browser language, mobile-friendly window, prompt STYLE section (short, lists, internal links, no self-intro). Tested iteration_23 (100%).
 - Livrable B audit written: /app/memory/ABENA_AUDIT.md — awaiting user validation before any dev.
 - Hubtel prod egress IP observed 130.211.210.175 (not guaranteed static).
+
+## 2026-06 Livrable A validated by user; regression run OK (deployment awaits explicit user authorization). Step 1 design: /app/memory/ABENA_STEP1_DESIGN.md (awaiting validation; steps 2-8 NOT started). Note: tests iteration15 forged-callback test is stale (preview Hubtel sandbox trusts callbacks by design); iteration14 ticket tests need seeded test-ticket-1 fixture.
