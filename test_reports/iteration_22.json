@@ -1,0 +1,21 @@
+{
+  "summary": "Retest of the iteration_21 MEDIUM scroll issue: FIXED. Full E2E /apply -> /payment -> Hubtel sandbox success -> /success on desktop 1920x800 and mobile 390x844. Before submit, scrollY was 1508 (desktop) and 2592 (mobile). On /payment, scrollY=0 and payment-independence-notice is fully in view above payment-hubtel-btn (desktop top 249-329 of 800; mobile 245-377 of 844). /success opens at scrollY=0 and success-independence-notice is fully in view (desktop 548-628; mobile 624-772). An elementFromPoint check shows nothing covers the notice. Both TEST_ applications were deleted (DELETE 200, then GET 404). USDT was not used.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Mobile /success and /payment (390x844)", "issues": ["The floating chat and WhatsApp buttons (bottom-right) partly cover the 'Track my application' button on /success and the 'Pay with USDT' buttons on /payment until the user scrolls. Low priority: consider extra bottom padding on mobile."]},
+      {"screen": "Mobile /payment sandbox banner", "issues": ["The 'Payment gateway in SANDBOX mode' banner breaks into three columns ('SANDBOX' sits alone in the middle). Cosmetic, and it only shows in preview."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": ["Optional: add bottom padding on mobile so the floating chat/WhatsApp buttons don't cover the main buttons."],
+  "critical_code_review_comments": ["Payment.jsx line 21 and Success.jsx line 10: window.scrollTo(0,0) in a mount useEffect is correct. A global ScrollToTop on route change would cover the other pages too."],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped)", "frontend": "100%"},
+  "seed_data_creation": "Created GH-2026-481510 and GH-2026-636988 (TEST_Scroll desktop/mobile). Both deleted.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Set the cookie consent with localStorage egv_cookie_consent_v1 in an init script. To get from /apply to /payment, fill every field, upload the 4 file inputs apply-file-{face_photo,passport_copy,passport_cover,flight_ticket} with set_input_files buffer PNGs, and tick both checkboxes. Hubtel sandbox: payment-hubtel-btn -> sandbox-success. Delete test apps via the admin DELETE endpoint."
+}
